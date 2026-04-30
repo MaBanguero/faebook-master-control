@@ -1,0 +1,173 @@
+    def proceso_views(self, link_post: str, detener_flag: Optional[threading.Event] = None):
+        """
+        Proceso de views en un post de YouTube
+        Args:
+            link_post: URL de video de Youtube
+        """
+        if not self._hay_cuentas_disponibles("views"):
+            return
+        
+        try:
+            print(f"🚀 [{self.device_id}] Iniciando proceso de views en post: {link_post}")
+            if self._should_stop(detener_flag, "views"):
+                return
+            
+            # Abrir el post
+            self.open_youtube_link(link_post)
+            self.random_sleep(5,8)
+            
+            if self.verificar_es_short():
+                # COMPORTAMIENTO PARA SHORTS
+                # Reproducir short por su duración estimada (30-60s) unas 5 veces
+                short_duration = random.randint(30, 60) * 5
+                print(f"▶️ [{self.device_id}] Reproduciendo Short por {short_duration} segundos...")
+                time.sleep(short_duration)
+                self.double_tap() # Like
+                self.device.swipe_ext("up", scale=0.6)  # Ir al siguiente short
+                self.random_sleep(10,25)
+                
+                # Scrollear otra vez 20% de probabilidad
+                if random.random() < 0.2:
+                    print(f"🔄 [{self.device_id}] Scrolleando a siguiente Short adicional...")
+                    self.device.swipe_ext("up", scale=0.6)  # Ir al siguiente short
+                    self.random_sleep(10,25)
+                
+                print(f"✅ [{self.device_id}] Short completado")
+            else:
+                # COMPORTAMIENTO PARA VIDEOS NORMALES
+                # Saltar anuncio si aparece            
+                self.saltar_anuncio()
+                # Reproducir video por su duración
+                video_player_xpath = '//*[@content-desc="Reproductor de vídeo"]'
+                if self.element_exists(video_player_xpath):
+                    print(f"✅ [{self.device_id}] Video cargado correctamente")
+                    self.click_element(video_player_xpath)
+                    self.short_sleep(0.5)
+                    
+                    # Obtener duración del video
+                    duration_resource_id = "com.google.android.youtube:id/time_bar_total_time"
+                    duration_text = self.get_element_text(resource_id=duration_resource_id)
+                    
+                    if duration_text:
+                        # Convertir a segundos
+                        total_seconds = self.parse_duration_to_seconds(duration_text)
+                        print(f"⏱️ [{self.device_id}] Video de {total_seconds} segundos")
+                        
+                        # Reproducir video por su duración
+                        if total_seconds > 0:
+                            print(f"▶️ [{self.device_id}] Reproduciendo video...")
+                            time.sleep(total_seconds-random.randint(40,60))
+                            print(f"✅ [{self.device_id}] Video completado")
+
+                # Entrando a video random
+                print(f"🔀 [{self.device_id}] Entrando a video random...")
+                video_random_xpath = '//*[contains(@content-desc, "ver vídeo")]'
+                if self.scroll_until_find(video_random_xpath):
+                    self.click_element(video_random_xpath)
+                    print(f"✅ [{self.device_id}] Video random abierto")
+                    self.random_sleep(30, 60)
+            
+            print(f"✅ [{self.device_id}] Proceso de views completado")
+            
+        except Exception as e:
+            print(f"❌ [{self.device_id}] Error en proceso de views: {e}")
+            raise
+        finally:
+            # Al finalizar, regresar a pantalla principal
+            self.device.press("home")
+            self.short_sleep(2)
+        self._post_proceso_rotacion("views", detener_flag)
+    
+    def proceso_reproducir_playlist(self, link_post: str, detener_flag: Optional[threading.Event] = None):
+        """
+        Proceso de reproducir playlist en YouTube
+        Args:
+            link_post: URL de playlist de Youtube
+        """
+        if not self._hay_cuentas_disponibles("reproducir playlist"):
+            return
+        try:
+            print(f"🚀 [{self.device_id}] Iniciando proceso de reproducir playlist: {link_post}")
+            if self._should_stop(detener_flag, "reproducir playlist"):
+                return
+            
+            # Abrir el post
+            self.open_youtube_link(link_post)
+            self.random_sleep(5,8)
+            
+            reproducir_playlist_xpath = '//*[contains(@content-desc, "Reproducir")]'
+            if self.element_exists(reproducir_playlist_xpath):
+                self.click_element(reproducir_playlist_xpath)
+                print(f"✅ [{self.device_id}] Reproduciendo playlist...")
+                
+                # Reproducir TODA la playlist
+                tiempo_total_reproducido = 0
+                continuar_playlist = True
+
+                while continuar_playlist:
+                    if self._should_stop(detener_flag, "reproducir playlist"):
+                        break
+                    # Saltar anuncio si aparece
+                    self.random_sleep(5,8)
+                    self.saltar_anuncio()
+                    # Reproducir video por su duración
+                    video_player_xpath = '//*[@content-desc="Reproductor de vídeo"]'
+                    if self.element_exists(video_player_xpath):
+                        print(f"✅ [{self.device_id}] Video cargado correctamente")
+                        
+                        # Obtener duración del video
+                        self.click_element(video_player_xpath)
+                        self.short_sleep(0.5)
+                        duration_resource_id = "com.google.android.youtube:id/time_bar_total_time"
+                        duration_text = self.get_element_text(resource_id=duration_resource_id)
+
+                        if duration_text:
+                            # Convertir a segundos
+                            total_seconds = self.parse_duration_to_seconds(duration_text)
+                            print(f"⏱️ [{self.device_id}] Video de {total_seconds} segundos")
+
+                            # Reproducir video por su duración
+                            if total_seconds > 0:
+                                print(f"▶️ [{self.device_id}] Reproduciendo video...")
+                                time.sleep(total_seconds+5)
+                                tiempo_total_reproducido += total_seconds
+                                # Verificar si no se ha acabado la playlist
+                                replay_playlist_xpath = '//*[@content-desc="Volver a reproducir"]'
+                                if self.element_exists(replay_playlist_xpath):
+                                    continuar_playlist = False
+                        else:
+                            video_player_xpath = '//*[@content-desc="Reproductor de vídeo"]'
+                            if self.element_exists(video_player_xpath):
+                                print(f"✅ [{self.device_id}] Video cargado correctamente")
+                                self.click_element(video_player_xpath)
+                                self.short_sleep(0.5)
+                                next_video_xpath = '//*[@content-desc="Siguiente vídeo"]'
+                                if self.element_exists(next_video_xpath):
+                                    self.click_element(next_video_xpath)
+                                    print(f"✅ [{self.device_id}] Siguiente video abierto")
+                                    self.random_sleep(5,8)
+                            continuar_playlist = True
+                    else:
+                        video_player_xpath = '//*[@content-desc="Reproductor de vídeo"]'
+                        if self.element_exists(video_player_xpath):
+                            print(f"✅ [{self.device_id}] Video cargado correctamente")
+                            self.click_element(video_player_xpath)
+                            self.short_sleep(0.5)
+                            next_video_xpath = '//*[@content-desc="Siguiente vídeo"]'
+                            if self.element_exists(next_video_xpath):
+                                self.click_element(next_video_xpath)
+                                print(f"✅ [{self.device_id}] Siguiente video abierto")
+                                self.random_sleep(5,8)
+                        continuar_playlist = True
+                
+                print(f"✅ [{self.device_id}] Playlist completada, tiempo total reproducido: {tiempo_total_reproducido} segundos")
+        except Exception as e:
+            print(f"❌ [{self.device_id}] Error en proceso de reproducir playlist: {e}")
+            raise
+        finally:
+            # Al finalizar, regresar a pantalla principal
+            self.device.press("home")
+            self.short_sleep(2)
+        self._post_proceso_rotacion("reproducir playlist", detener_flag)
+                    
+    

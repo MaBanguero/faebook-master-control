@@ -1,0 +1,7 @@
+tunnel: 06f19e73-2b12-4d2a-b212-87d35485bb4e
+credentials-file: /home/marvin/.cloudflared/06f19e73-2b12-4d2a-b212-87d35485bb4e.json
+
+ingress:
+  - hostname: masbarato.lat
+    service: http://127.0.0.1:8000
+  - service: http_status:404
