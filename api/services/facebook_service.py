@@ -135,8 +135,8 @@ class FacebookService:
         """
         Ejecuta el flujo completo en múltiples cuentas por dispositivo.
 
-        - Si cuentas_a_usar == 0: usa el contador secuencial (igual que flujo_completo normal)
-        - Si cuentas_a_usar > 0: selecciona N cuentas al azar del pool disponible.
+        - cuentas_a_usar = 0 (default): usa TODAS las cuentas disponibles, en orden
+        - cuentas_a_usar = N > 0: selecciona N cuentas al azar.
           Si N > disponibles, usa todas las disponibles y advierte.
         """
         for d_id in dispositivos_ids:
@@ -173,14 +173,11 @@ class FacebookService:
 
             # Determinar cuántas y cuáles cuentas usar
             if cuentas_a_usar <= 0:
-                # Modo secuencial: usar contador igual que flujo_completo normal
-                if d_id not in self.contadores_rotacion:
-                    self.contadores_rotacion[d_id] = 0
-                indice = self.contadores_rotacion[d_id]
-                indices_a_usar = [indice % total_disponibles]
-                print(f"   🔢 Modo secuencial: cuenta índice {indices_a_usar[0]}")
+                # 0 = usar TODAS las cuentas disponibles, en orden
+                indices_a_usar = list(range(total_disponibles))
+                print(f"   📋 Usando TODAS las cuentas: {total_disponibles} en orden")
             else:
-                # Modo N cuentas aleatorias
+                # N > 0 = seleccionar N cuentas al azar
                 n = min(cuentas_a_usar, total_disponibles)
                 if cuentas_a_usar > total_disponibles:
                     print(f"   ⚠️ Solicitadas {cuentas_a_usar} cuentas, pero solo hay {total_disponibles}. Usando {n}.")
@@ -202,10 +199,6 @@ class FacebookService:
                     exitos += 1
                 else:
                     fallos += 1
-
-            # Actualizar contador para modo secuencial
-            if cuentas_a_usar <= 0 and indices_a_usar:
-                self.contadores_rotacion[d_id] = (indices_a_usar[0] + 1) % total_disponibles
 
             exito_total = exitos > 0 and fallos == 0
             print(f"\n📊 [{d_id}] Multi-flujo: {exitos} éxitos, {fallos} fallos de {len(indices_a_usar)} cuentas")
