@@ -124,12 +124,33 @@ class FacebookAutomator:
 
             time.sleep(3)
 
+            # --- Expandir lista si hay "Ver todo" ---
+            # Facebook limita la vista inicial a ~5 cuentas cuando hay muchas;
+            # si no aparece "Ver todo", todas las cuentas ya están visibles.
+            lista_expandida = False
+            ver_todo_xpaths = [
+                '//*[contains(@text, "Ver todo") or contains(@content-desc, "Ver todo")]',
+                '//*[contains(@text, "See all") or contains(@content-desc, "See all")]',
+            ]
+            for xp in ver_todo_xpaths:
+                if self.device.xpath(xp).wait(timeout=5):
+                    self.device.xpath(xp).click()
+                    print(f"   📋 Lista expandida (clic en 'Ver todo')")
+                    time.sleep(2)
+                    lista_expandida = True
+                    break
+
+            # Solo hacer scroll si expandimos — si no, todas las cuentas ya están visibles
+            if lista_expandida:
+                for _ in range(3):
+                    self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
+                    time.sleep(1)
+
             # --- Paso 3: Seleccionar cuenta por índice ---
             if detener_flag and detener_flag.is_set():
                 return False
 
-            # La lista de cuentas: buscar todos los elementos clickeables
-            # que sean nombres de perfil (excluir "Cerrar")
+            # Dumpear la jerarquía COMPLETA después de expandir
             xml = self.device.dump_hierarchy()
             import xml.etree.ElementTree as ET
             root = ET.fromstring(xml)
@@ -162,6 +183,12 @@ class FacebookAutomator:
                         # Configuración
                         'configuración', 'settings', 'ayuda', 'help',
                         'ver todas', 'see all', 'menú', 'menu',
+                        # Panel de cuentas (no son perfiles)
+                        'ver todo', 'see all',  # botón expandir lista
+                        'ir al centro de cuentas', 'accounts center',
+                        'go to accounts center',
+                        'búsqueda', 'ícono', 'icono', 'search icon',
+                        'barra de navegación', 'navigation bar',
                         # Otros
                         'feed', 'news feed', 'noticias',
                         'dark mode', 'modo oscuro',
