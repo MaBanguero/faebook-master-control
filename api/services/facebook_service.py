@@ -152,8 +152,8 @@ class FacebookService:
         num_dispositivos = len(dispositivos_ids)
 
         for i, d_id in enumerate(dispositivos_ids):
-            # Repartir comentarios entre dispositivos
-            if len(comentarios) > 1 and num_dispositivos > 1:
+            # Repartir comentarios entre dispositivos — siempre si hay más de 1 dispositivo
+            if num_dispositivos > 1:
                 chunk_size = max(1, len(comentarios) // num_dispositivos)
                 inicio = i * chunk_size
                 if i == num_dispositivos - 1:
@@ -162,6 +162,11 @@ class FacebookService:
                     comentarios_dispositivo = comentarios[inicio:inicio + chunk_size]
             else:
                 comentarios_dispositivo = comentarios
+
+            # Saltar dispositivo si no le tocaron comentarios
+            if not comentarios_dispositivo:
+                print(f"⏭️ [{d_id}] Sin comentarios asignados, saltando")
+                continue
 
             flag = threading.Event()
             self.fb_detener_flags[d_id] = flag
