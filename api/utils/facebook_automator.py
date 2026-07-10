@@ -40,11 +40,16 @@ class FacebookAutomator:
         Navega al feed principal desde cualquier pantalla.
         Usa la pestaña 'Inicio' de la barra inferior (content-desc exacto).
         """
-        inicio_tab = '//*[contains(@content-desc, "Inicio, pestaña")]'
-        if self.device.xpath(inicio_tab).exists:
-            self.device.xpath(inicio_tab).click()
-            time.sleep(3)
-            return True
+        # "Inicio, pestaña" (ES) / "Home, tab" (EN)
+        inicio_xpaths = [
+            '//*[contains(@content-desc, "Inicio, pestaña") or contains(@content-desc, "Home, tab")]',
+            '//*[contains(@content-desc, "Inicio") or contains(@content-desc, "Home")]',
+        ]
+        for xp in inicio_xpaths:
+            if self.device.xpath(xp).exists:
+                self.device.xpath(xp).click()
+                time.sleep(3)
+                return True
         # Fallback: back repetido hasta salir de pantallas modales
         for _ in range(4):
             self.device.press("back")
@@ -77,10 +82,10 @@ class FacebookAutomator:
             if detener_flag and detener_flag.is_set():
                 return False
 
+            # "Menu" es substring de "Menú" → un solo contains cubre ambos idiomas
             menu_xpaths = [
-                '//*[@content-desc="Menú"]',
-                '//*[contains(@content-desc, "Menú")]',
-                '//*[@content-desc="Menu"]',
+                '//*[contains(@content-desc, "Menu") or contains(@content-desc, "Menú")]',
+                '//*[contains(@content-desc, "navigation") or contains(@content-desc, "navegación")]',
             ]
             menu_abierto = False
             for xp in menu_xpaths:
@@ -101,10 +106,9 @@ class FacebookAutomator:
                 return False
 
             cambiar_xpaths = [
-                '//*[contains(@content-desc, "cambiar de perfil")]',
-                '//*[contains(@content-desc, "cambiar perfil")]',
-                '//*[contains(@content-desc, "switch profile")]',
-                '//*[contains(@content-desc, "switch account")]',
+                '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil")]',
+                '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
+                '//*[contains(@content-desc, "change profile") or contains(@content-desc, "change account")]',
             ]
             cambiar_abierto = False
             for xp in cambiar_xpaths:
@@ -138,15 +142,28 @@ class FacebookAutomator:
                 label = txt or desc
 
                 # Filtrar: solo elementos clickeables que no sean UI chrome
-                if clickable == 'true' and label and label != 'Cerrar':
+                if clickable == 'true' and label and label not in ('Cerrar', 'Close'):
                     skip_keywords = [
-                        'atrás', 'back', 'inicio', 'home', 'menú', 'menu',
-                        'notificaciones', 'reels', 'buscar', 'search',
-                        'mensaj', 'messeng', 'crear', 'historia', 'ver todas',
+                        # Navegación y sistema
+                        'atrás', 'back', 'inicio', 'home',
+                        'recientes', 'recents', 'recent apps',
+                        # Tabs de la app
+                        'notificaciones', 'notifications',
+                        'panel profesional', 'professional dashboard',
+                        'reels', 'buscar', 'search',
+                        'mensaj', 'messeng', 'crear', 'create',
+                        'historia', 'story', 'guardado', 'saved',
+                        'recuerdos', 'memories', 'eventos', 'events',
+                        'grupos', 'groups', 'páginas', 'pages',
+                        'amigos', 'friends', 'marketplace',
+                        # Configuración
                         'configuración', 'settings', 'ayuda', 'help',
-                        'panel profesional', 'recuerdos', 'guardado',
-                        'grupos', 'páginas', 'eventos', 'amigos',
-                        'recientes',  # Android system button
+                        'ver todas', 'see all', 'menú', 'menu',
+                        # Otros
+                        'feed', 'news feed', 'noticias',
+                        'dark mode', 'modo oscuro',
+                        'log out', 'cerrar sesión', 'logout',
+                        'report', 'reportar', 'denunciar',
                     ]
                     if not any(kw in label.lower() for kw in skip_keywords):
                         # Limpiar sufijo de notificaciones: "nombre, N notificación" → "nombre"
@@ -370,8 +387,16 @@ class FacebookAutomator:
 
             # Opciones dentro del menú de compartir
             btn_compartir_ahora = '//*[contains(@text, "Compartir ahora") or contains(@text, "Share now")]'
-            btn_escribir_post = '//*[contains(@text, "Escribir publicación") or contains(@text, "Write post") or contains(@text, "Create post") or contains(@text, "Escribe algo")]'
-            btn_publicar_final = '//*[@text="PUBLICAR" or @text="POST" or @text="SHARE" or @text="Compartir ahora"]'
+            btn_escribir_post = (
+                '//*[contains(@text, "Escribir publicación") or contains(@text, "Write post")'
+                ' or contains(@text, "Create post") or contains(@text, "Escribe algo")'
+                ' or contains(@text, "Write something") or contains(@text, "Say something")]'
+            )
+            btn_publicar_final = (
+                '//*[@text="PUBLICAR" or @text="POST" or @text="SHARE"'
+                ' or contains(@text, "Compartir ahora") or contains(@text, "Share now")'
+                ' or contains(@text, "Share Now")]'
+            )
 
             compartir_encontrado = False
 
