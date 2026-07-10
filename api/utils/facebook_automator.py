@@ -1,7 +1,18 @@
+"""
+FacebookAutomator v2 — Selectores validados contra Facebook v568.0.0.46.74 (Jul 2026)
+
+Branch: fix/facebook-v568-selectors
+Validado en: Samsung Galaxy S8 (SM-G950U), Android 9 (SDK 28)
+
+Estructura de UI documentada:
+  - Top bar: [Menú] [Logo] [Crear] [Buscar] [Mensajería]
+  - Bottom tabs: Inicio | Panel profesional | Reels | Notificaciones | Perfil
+  - Reels: botones laterales derechos — reacciones, comentarios, compartir
+  - Menú lateral: perfil activo + opción "cambiar de perfil" + lista de cuentas
+"""
+
 import time
 import random
-from traceback import print_tb
-
 import uiautomator2 as u2
 
 
@@ -10,256 +21,438 @@ class FacebookAutomator:
         self.device_id = device_id
         self.device = u2.connect(device_id)
 
+    # ═══════════════════════════════════════════════════════════════
+    # NAVEGACIÓN Y APERTURA
+    # ═══════════════════════════════════════════════════════════════
+
     def abrir_facebook_link(self, link: str):
-        """Abre el Reel mediante deep link"""
+        """Abre un post/reel mediante deep link."""
         self.device.shell(f'am start -a android.intent.action.VIEW -d "{link}"')
         time.sleep(6)
 
+    def cerrar_facebook(self):
+        """Cierra forzosamente la app de Facebook."""
+        self.device.app_stop("com.facebook.katana")
+        time.sleep(2)
+
+    def _ir_a_feed(self):
+        """
+        Navega al feed principal desde cualquier pantalla.
+        Usa la pestaña 'Inicio' de la barra inferior (content-desc exacto).
+        """
+        inicio_tab = '//*[contains(@content-desc, "Inicio, pestaña")]'
+        if self.device.xpath(inicio_tab).exists:
+            self.device.xpath(inicio_tab).click()
+            time.sleep(3)
+            return True
+        # Fallback: back repetido hasta salir de pantallas modales
+        for _ in range(4):
+            self.device.press("back")
+            time.sleep(1)
+        return True
+
+    # ═══════════════════════════════════════════════════════════════
+    # ROTACIÓN DE CUENTAS (reescrito para v568)
+    # ═══════════════════════════════════════════════════════════════
+
+    def rotar_perfil_secuencial(self, indice_objetivo: int, detener_flag=None):
+        """
+        Cambia de cuenta usando la UI nativa de Facebook v568.
+
+        Flujo real (validado Jul 2026):
+          1. Abrir menú hamburguesa → @content-desc="Menú"
+          2. Click en "cambiar de perfil" → contains(@content-desc, "cambiar de perfil")
+          3. Seleccionar cuenta por índice en la lista de perfiles
+        """
+        try:
+            print(f"🔄 [{self.device_id}] Rotando cuenta (índice objetivo: {indice_objetivo})...")
+
+            # Paso 0: Reiniciar la app para estado limpio
+            self.device.app_stop("com.facebook.katana")
+            time.sleep(2)
+            self.device.app_start("com.facebook.katana")
+            time.sleep(8)
+
+            # --- Paso 1: Abrir menú hamburguesa ---
+            if detener_flag and detener_flag.is_set():
+                return False
+
+            menu_xpaths = [
+                '//*[@content-desc="Menú"]',
+                '//*[contains(@content-desc, "Menú")]',
+                '//*[@content-desc="Menu"]',
+            ]
+            menu_abierto = False
+            for xp in menu_xpaths:
+                if self.device.xpath(xp).wait(timeout=3):
+                    self.device.xpath(xp).click()
+                    menu_abierto = True
+                    print(f"   ✅ Menú abierto")
+                    break
+
+            if not menu_abierto:
+                print(f"   ❌ No se encontró el botón de menú")
+                return False
+
+            time.sleep(3)
+
+            # --- Paso 2: Click en "cambiar de perfil" ---
+            if detener_flag and detener_flag.is_set():
+                return False
+
+            cambiar_xpaths = [
+                '//*[contains(@content-desc, "cambiar de perfil")]',
+                '//*[contains(@content-desc, "cambiar perfil")]',
+                '//*[contains(@content-desc, "switch profile")]',
+                '//*[contains(@content-desc, "switch account")]',
+            ]
+            cambiar_abierto = False
+            for xp in cambiar_xpaths:
+                if self.device.xpath(xp).wait(timeout=2):
+                    self.device.xpath(xp).click()
+                    cambiar_abierto = True
+                    print(f"   ✅ Panel de cuentas abierto")
+                    break
+
+            if not cambiar_abierto:
+                print(f"   ❌ No se encontró 'cambiar de perfil'")
+                return False
+
+            time.sleep(3)
+
+            # --- Paso 3: Seleccionar cuenta por índice ---
+            if detener_flag and detener_flag.is_set():
+                return False
+
+            # La lista de cuentas: buscar todos los elementos clickeables
+            # que sean nombres de perfil (excluir "Cerrar")
+            xml = self.device.dump_hierarchy()
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(xml)
+
+            cuentas = []
+            for el in root.iter():
+                txt = el.attrib.get('text', '')
+                desc = el.attrib.get('content-desc', '')
+                clickable = el.attrib.get('clickable', 'false')
+                label = txt or desc
+
+                # Filtrar: solo elementos clickeables que no sean UI chrome
+                if clickable == 'true' and label and label != 'Cerrar':
+                    skip_keywords = [
+                        'atrás', 'back', 'inicio', 'home', 'menú', 'menu',
+                        'notificaciones', 'reels', 'buscar', 'search',
+                        'mensaj', 'messeng', 'crear', 'historia', 'ver todas',
+                        'configuración', 'settings', 'ayuda', 'help',
+                        'panel profesional', 'recuerdos', 'guardado',
+                        'grupos', 'páginas', 'eventos', 'amigos',
+                        'recientes',  # Android system button
+                    ]
+                    if not any(kw in label.lower() for kw in skip_keywords):
+                        # Limpiar sufijo de notificaciones: "nombre, N notificación" → "nombre"
+                        clean_label = label.split(',')[0].strip()
+                        cuentas.append(clean_label)
+
+            if not cuentas:
+                print(f"   ❌ No se detectaron cuentas en la lista")
+                return False
+
+            print(f"   📋 {len(cuentas)} cuentas disponibles: {cuentas}")
+
+            # Seleccionar por índice (cíclico)
+            indice_real = indice_objetivo % len(cuentas)
+            cuenta_seleccionada = cuentas[indice_real]
+            print(f"   👤 Seleccionando [{indice_real}] → '{cuenta_seleccionada}'")
+
+            # Click en la cuenta por su texto/content-desc (usar contains para robustez)
+            cuenta_xpath = f'//*[contains(@content-desc, "{cuenta_seleccionada}") or contains(@text, "{cuenta_seleccionada}")]'
+            if self.device.xpath(cuenta_xpath).exists:
+                self.device.xpath(cuenta_xpath).click()
+                time.sleep(8)
+                print(f"   ✅ Cambio exitoso: '{cuenta_seleccionada}'")
+                return True
+            else:
+                # Último recurso: click por coordenadas del elemento encontrado
+                for el in root.iter():
+                    d = el.attrib.get('content-desc', '')
+                    t = el.attrib.get('text', '')
+                    if d == cuenta_seleccionada or t == cuenta_seleccionada:
+                        bounds_str = el.attrib.get('bounds', '')
+                        try:
+                            parts = bounds_str.replace('[', ',').replace(']', ',').split(',')
+                            x = (int(parts[0]) + int(parts[2])) // 2
+                            y = (int(parts[1]) + int(parts[3])) // 2
+                            self.device.click(x, y)
+                            time.sleep(8)
+                            print(f"   ✅ Cambio exitoso (click por coordenadas): '{cuenta_seleccionada}'")
+                            return True
+                        except (ValueError, IndexError):
+                            pass
+
+                print(f"   ❌ No se pudo clickear '{cuenta_seleccionada}'")
+                return False
+
+        except Exception as e:
+            print(f"   ❌ Error en rotación de cuenta: {e}")
+            return False
+
+    # ═══════════════════════════════════════════════════════════════
+    # LIKE (selectores limpiados para v568)
+    # ═══════════════════════════════════════════════════════════════
+
     def proceso_like_facebook(self, link: str, detener_flag=None):
+        """
+        Da like a un reel/post de Facebook.
+
+        Selectores validados v568:
+          - ✅ contains(@content-desc, "reacciones")  ← el que funciona
+          - ❌ "Me gusta"/"Like" exactos ya no existen en la UI
+        """
         try:
             self.abrir_facebook_link(link)
-            # Tiempo de espera aleatorio para carga inicial
             time.sleep(random.randint(3, 5))
 
-            # Clic de limpieza para asegurar el foco en la app
-            #self.device.click(0.5, 0.3)
-
+            # Selectores ordenados por prioridad (primero el validado)
             selectores = [
                 '//android.widget.Button[contains(@content-desc, "reacciones") or contains(@content-desc, "reactions")]',
-                '//android.widget.Button[@content-desc="Me gusta" or @content-desc="Like"]',
-                '//android.view.ViewGroup[@content-desc="Me gusta" or @content-desc="Like"]',
-                '//android.widget.ViewGroup[contains(@content-desc, "reacciones") or contains(@content-desc, "reactions")]',
-                '//android.widget.Button[contains(@content-desc, "Like button") or contains(@content-desc, "Botón Me gusta") or contains(@content-desc, "react") or contains(@content-desc, "reaccionar")]'
+                '//*[contains(@content-desc, "reacciones") or contains(@content-desc, "reactions")]',
+                '//android.widget.Button[contains(@content-desc, "Like button") or contains(@content-desc, "react") or contains(@content-desc, "reaccionar")]',
             ]
 
-            # --- Lógica de Búsqueda con Scroll (5 intentos) ---
             for intento in range(5):
-                if detener_flag and detener_flag.is_set(): return False
+                if detener_flag and detener_flag.is_set():
+                    return False
 
-                print(f"Buscando botón de Like/Reacción... Intento {intento + 1}")
+                print(f"   🔍 Buscando botón Like/Reacción... Intento {intento + 1}")
 
                 for xpath in selectores:
                     if self.device.xpath(xpath).exists:
-                        print(f"¡Botón de Like encontrado en el intento {intento + 1}!")
+                        print(f"   ✅ Botón Like encontrado en intento {intento + 1}")
                         self.device.xpath(xpath).click()
-                        return True  # Retorna inmediatamente al tener éxito
+                        return True
 
-                # Si no se encuentra en la vista actual, scroll suave
-                print("Botón de Like no visible, realizando scroll suave...")
-                # Swipe de abajo hacia arriba (0.7 -> 0.3) con duración para que sea humano
+                print("   ↕️ Scroll para buscar botón Like...")
                 self.device.swipe(0.5, 0.7, 0.5, 0.4, duration=0.6)
-                time.sleep(2)  # Pausa para refrescar el árbol de UI
+                time.sleep(2)
 
-            print("No se encontró el botón de Like tras 5 intentos de scroll.")
+            print(f"   ❌ Like no ejecutado tras 5 intentos")
             return False
 
         except Exception as e:
-            print(f"Error Like: {e}")
+            print(f"   ❌ Error Like: {e}")
             return False
 
+    # ═══════════════════════════════════════════════════════════════
+    # COMENTARIO (selectores limpiados para v568)
+    # ═══════════════════════════════════════════════════════════════
+
     def proceso_comentario_reels(self, link: str, texto: str, detener_flag=None):
+        """
+        Publica un comentario en un reel/post de Facebook.
+
+        Flujo validado v568:
+          1. Abrir link
+          2. Click en botón "comentarios" (contiene content-desc "comentarios" o "comentario")
+          3. Escribir en el EditText
+          4. Click en "Enviar" o presionar Enter
+        """
         try:
             self.abrir_facebook_link(link)
             time.sleep(3)
 
+            # --- Abrir sección de comentarios ---
             selectores_abrir = [
-                '//android.widget.Button[@content-desc="Comentar" or @content-desc="Comment"]',
                 '//android.widget.Button[contains(@content-desc, "comentario") or contains(@content-desc, "comment")]',
                 '//android.view.ViewGroup[contains(@content-desc, "comentario") or contains(@content-desc, "comment")]',
-                '//android.widget.ImageView[contains(@content-desc, "comentario") or contains(@content-desc, "comment")]'
+                '//*[contains(@content-desc, "comentarios") or contains(@content-desc, "comments")]',
             ]
 
             seccion_abierta = False
-
-            # --- Lógica de Búsqueda con Scroll (5 intentos) ---
             for intento in range(5):
-                if detener_flag and detener_flag.is_set(): return False
+                if detener_flag and detener_flag.is_set():
+                    return False
 
-                print(f"Buscando botón de comentario... Intento {intento + 1}")
+                print(f"   🔍 Buscando botón Comentarios... Intento {intento + 1}")
 
-                # Verificar si alguno de los selectores existe en la pantalla actual
                 for xpath in selectores_abrir:
                     if self.device.xpath(xpath).exists:
-                        print(f"¡Comentar encontrado en el intento {intento + 1}!")
+                        print(f"   ✅ Botón Comentarios encontrado")
                         self.device.xpath(xpath).click()
                         seccion_abierta = True
                         break
 
                 if seccion_abierta:
-                    break  # Salimos del bucle de intentos de scroll
+                    break
 
-                # Si no se encontró, realizamos un scroll suave hacia abajo
-                # (x_inicio, y_inicio, x_fin, y_fin, duracion_en_segundos)
-                print("Botón no visible, realizando scroll suave...")
+                print("   ↕️ Scroll para buscar botón...")
                 self.device.swipe(0.5, 0.7, 0.5, 0.3, duration=0.5)
-                time.sleep(2)  # Pausa para que carguen los elementos tras el scroll
+                time.sleep(2)
 
-            # --- Proceso de escritura del comentario ---
-            if seccion_abierta:
-                time.sleep(3)
-                campo = '//android.widget.EditText'
-                if self.device.xpath(campo).exists:
-                    self.device.xpath(campo).set_text(str(texto))
-                    time.sleep(2)
+            if not seccion_abierta:
+                print(f"   ❌ No se pudo abrir sección de comentarios")
+                return False
 
-                    btn_enviar = '//android.widget.ImageView[contains(@content-desc, "Enviar") or contains(@content-desc, "Send")]'
-                    btn_enviar_alt = '//android.widget.Button[@content-desc="Enviar" or @content-desc="Send"]'
+            time.sleep(3)
 
-                    if self.device.xpath(btn_enviar).exists:
-                        self.device.xpath(btn_enviar).click()
-                    elif self.device.xpath(btn_enviar_alt).exists:
-                        self.device.xpath(btn_enviar_alt).click()
-                    else:
-                        self.device.press("enter")
+            # --- Escribir comentario ---
+            # El EditText tiene content-desc tipo "Comentar como <nombre>"
+            campo_selectores = [
+                '//android.widget.EditText',
+                '//*[contains(@content-desc, "Comentar como")]',
+                '//*[contains(@content-desc, "Comment as")]',
+            ]
 
-                    print("Comentario enviado con éxito")
-                    return True
+            campo_encontrado = False
+            for xp in campo_selectores:
+                if self.device.xpath(xp).exists:
+                    self.device.xpath(xp).set_text(str(texto))
+                    campo_encontrado = True
+                    print(f"   ✅ Texto escrito: '{texto[:50]}...'")
+                    break
 
-            print("No se pudo encontrar el botón de comentario tras 5 intentos.")
-            return False
+            if not campo_encontrado:
+                print(f"   ❌ No se encontró el campo de texto")
+                return False
 
-        except Exception as e:
-            print(f"Error Comentario: {e}")
-            return False
-
-    def rotar_perfil_secuencial(self, indice_objetivo: int, detener_flag=None):
-        """Secuencia con reinicio: Cierra, abre y navega hasta el cambio de cuenta"""
-        try:
-            print(f"🔄 [{self.device_id}] Reiniciando App para rotación limpia...")
-
-            # PASO 0: Cierre y apertura forzada
-            self.device.app_stop("com.facebook.katana")
             time.sleep(2)
-            self.device.app_start("com.facebook.katana")
-            time.sleep(8)  # Espera de carga inicial
 
-            # Paso 1: Menú Lateral (Path validado)
-            xpath_inicio ="//android.widget.FrameLayout[2]/android.widget.LinearLayout/android.widget.FrameLayout/android.widget.FrameLayout[1]/android.widget.LinearLayout/android.widget.FrameLayout/android.widget.LinearLayout/android.widget.LinearLayout/android.widget.FrameLayout[2]/android.widget.LinearLayout[1]/android.widget.FrameLayout[6]"
-            if self.device.xpath(xpath_inicio).wait(5):
-                self.device.xpath(xpath_inicio).click()
-                time.sleep(4)
+            # --- Enviar comentario ---
+            enviar_selectores = [
+                '//*[@content-desc="Enviar"]',
+                '//*[@content-desc="Send"]',
+                '//android.widget.ImageView[contains(@content-desc, "Enviar") or contains(@content-desc, "Send")]',
+            ]
 
-            # Paso 2: ViewPager (Puente hacia Meta)
-            xpath_viewpager = "//android.widget.FrameLayout[2]/android.widget.LinearLayout/android.widget.FrameLayout/android.widget.FrameLayout[1]/android.widget.FrameLayout/androidx.viewpager.widget.ViewPager/android.widget.FrameLayout/android.widget.FrameLayout[1]/android.widget.FrameLayout/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup/androidx.recyclerview.widget.RecyclerView/android.view.ViewGroup[1]/android.view.ViewGroup/android.view.ViewGroup/android.widget.Button[3]/android.view.ViewGroup"
-            if self.device.xpath(xpath_viewpager).exists:
-                self.device.xpath(xpath_viewpager).click()
-                time.sleep(4)
+            enviado = False
+            for xp in enviar_selectores:
+                if self.device.xpath(xp).exists:
+                    self.device.xpath(xp).click()
+                    enviado = True
+                    print(f"   ✅ Comentario enviado")
+                    break
 
-            # Paso 3: Selección por Índice en RecyclerView
-            xpath_lista = '//androidx.recyclerview.widget.RecyclerView/android.view.ViewGroup'
-            nodos = self.device.xpath(xpath_lista).all()
-            if len(nodos) > 0:
-                indice_real = (indice_objetivo % len(nodos)) + 1
-                selector_final = f'{xpath_lista}[{indice_real}]'
-                self.device.xpath(selector_final).click()
-                print(f"👤 [{self.device_id}] Perfil {indice_real} seleccionado.")
-                time.sleep(10)
-                return True
+            if not enviado:
+                # Fallback: presionar Enter
+                self.device.press("enter")
+                print(f"   ✅ Comentario enviado (Enter)")
 
-            return False
+            time.sleep(2)
+            return True
+
         except Exception as e:
-            print(f"Error Rotación: {e}")
+            print(f"   ❌ Error Comentario: {e}")
             return False
+
+    # ═══════════════════════════════════════════════════════════════
+    # COMPARTIR (validado v568)
+    # ═══════════════════════════════════════════════════════════════
 
     def proceso_compartir_post(self, link: str, detener_flag=None):
+        """
+        Comparte un post/reel de Facebook.
+
+        Flujo validado v568:
+          1. Abrir link
+          2. Click en "Compartir" (content-desc contiene "Compartir" o "Share")
+          3. En menú de compartir: click en "Compartir ahora"
+          4. Si no hay "Compartir ahora", usar "Escribir publicación" → "PUBLICAR"
+        """
         try:
-            # 1. Abrimos el link y esperamos a que cargue sin tocar la pantalla
             self.abrir_facebook_link(link)
-            print("Cargando link... Esperando renderizado.")
+            print("   ⏳ Cargando link...")
             time.sleep(random.randint(7, 10))
 
+            # Selector de Compartir diferenciado para reels vs posts
             if "reel" in link.lower():
-                print("Tipo detectado: REEL. Usando búsqueda por contiene (contains).")
                 btn_compartir = '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share")]'
             else:
-                print("Tipo detectado: POST. Usando búsqueda por palabra exacta.")
-                btn_compartir = '//*[@content-desc="Compartir" or @content-desc="Share"]'
+                btn_compartir = '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share")]'
 
+            # Opciones dentro del menú de compartir
             btn_compartir_ahora = '//*[contains(@text, "Compartir ahora") or contains(@text, "Share now")]'
-            btn_escribir_post = '//*[contains(@text, "Escribir publicación") or contains(@text, "Write post") or contains(@text, "Create post")]'
-            btn_publicar_final = '//*[@text="PUBLICAR" or @text="POST" or @text="SHARE"]'
+            btn_escribir_post = '//*[contains(@text, "Escribir publicación") or contains(@text, "Write post") or contains(@text, "Create post") or contains(@text, "Escribe algo")]'
+            btn_publicar_final = '//*[@text="PUBLICAR" or @text="POST" or @text="SHARE" or @text="Compartir ahora"]'
 
             compartir_encontrado = False
 
-            # --- Lógica de Búsqueda con Scroll (5 intentos) ---
             for intento in range(5):
-                if detener_flag and detener_flag.is_set(): return False
+                if detener_flag and detener_flag.is_set():
+                    return False
 
-                print(f"Buscando botón Compartir (Intento {intento + 1})...")
+                print(f"   🔍 Buscando botón Compartir (Intento {intento + 1})...")
 
-                # Verificamos existencia directamente con el selector
                 if self.device.xpath(btn_compartir).exists:
-                    print(f"¡Botón Compartir encontrado! Haciendo clic.")
                     time.sleep(1)
                     self.device.xpath(btn_compartir).click()
                     compartir_encontrado = True
+                    print(f"   ✅ Botón Compartir clickeado")
                     break
 
-                # Si no existe, hacemos scroll suave desde la mitad
-                print("Botón no encontrado, realizando scroll...")
+                print("   ↕️ Scroll...")
                 self.device.swipe(0.5, 0.5, 0.5, 0.2, duration=0.6)
                 time.sleep(3)
 
-            # --- Acciones posteriores tras el clic exitoso ---
-            if compartir_encontrado:
-                time.sleep(4)
-                if detener_flag and detener_flag.is_set(): return False
+            if not compartir_encontrado:
+                print(f"   ❌ Botón Compartir no encontrado")
+                return False
 
-                # Opción 1: Compartir ahora
-                if self.device.xpath(btn_compartir_ahora).exists:
-                    self.device.xpath(btn_compartir_ahora).click()
-                    print(f"✅ [{self.device_id}] Compartido directamente.")
+            time.sleep(4)
+            if detener_flag and detener_flag.is_set():
+                return False
+
+            # Opción 1: Compartir ahora (directo)
+            if self.device.xpath(btn_compartir_ahora).exists:
+                self.device.xpath(btn_compartir_ahora).click()
+                print(f"   ✅ Compartido directamente")
+                return True
+
+            # Opción 2: Escribir publicación → PUBLICAR
+            if self.device.xpath(btn_escribir_post).exists:
+                self.device.xpath(btn_escribir_post).click()
+                time.sleep(5)
+
+                if self.device.xpath(btn_publicar_final).exists:
+                    self.device.xpath(btn_publicar_final).click()
+                    print(f"   ✅ Compartido mediante publicación")
                     return True
 
-                # Opción 2: Escribir publicación
-                if self.device.xpath(btn_escribir_post).exists:
-                    self.device.xpath(btn_escribir_post).click()
-                    time.sleep(5)
-
-                    if self.device.xpath(btn_publicar_final).exists:
-                        self.device.xpath(btn_publicar_final).click()
-                        print(f"✅ [{self.device_id}] Compartido mediante publicación.")
-                        return True
-
-            print(f"❌ [{self.device_id}] No se pudo encontrar el botón Compartir.")
+            print(f"   ❌ No se encontraron opciones de compartir")
             return False
 
         except Exception as e:
-            print(f"Error Compartir FB: {e}")
+            print(f"   ❌ Error Compartir: {e}")
             return False
 
-    def cerrar_facebook(self):
-        """Cierra forzosamente la aplicación de Facebook"""
-        print(f"🛑 [{self.device_id}] Cerrando Facebook...")
-        self.device.app_stop("com.facebook.katana")
-        time.sleep(2)
+    # ═══════════════════════════════════════════════════════════════
+    # FLUJO COMPLETO
+    # ═══════════════════════════════════════════════════════════════
 
     def ejecutar_flujo_completo_fb(self, link: str, texto_comentario: str, detener_flag=None):
         """
-        Ejecuta Like, Comentario y Compartir en una sola secuencia.
-        Cierra la app después de cada acción exitosa o fallida.
+        Ejecuta Like → Comentario → Compartir en secuencia.
+        Cierra la app después de cada acción.
         """
-        print(f"🚀 Iniciando flujo completo para el dispositivo: {self.device_id}")
+        print(f"🚀 [{self.device_id}] Iniciando flujo completo")
 
-        # 1. EJECUTAR LIKE
+        # 1. LIKE
         print("\n--- PASO 1: LIKE ---")
         self.proceso_like_facebook(link, detener_flag)
-        time.sleep(6)
+        time.sleep(3)
         self.cerrar_facebook()
-        if detener_flag and detener_flag.is_set(): return False
+        if detener_flag and detener_flag.is_set():
+            return False
 
-        # 2. EJECUTAR COMENTARIO
+        # 2. COMENTARIO
         print("\n--- PASO 2: COMENTARIO ---")
         self.proceso_comentario_reels(link, texto_comentario, detener_flag)
-        time.sleep(6)
+        time.sleep(3)
         self.cerrar_facebook()
-        #if detener_flag and detener_flag.is_set(): return False
 
-        # 3. EJECUTAR COMPARTIR
+        # 3. COMPARTIR
         print("\n--- PASO 3: COMPARTIR ---")
         self.proceso_compartir_post(link, detener_flag)
-        time.sleep(6)
+        time.sleep(3)
         self.cerrar_facebook()
 
-        print(f"\n✅ [{self.device_id}] Flujo completo finalizado.")
+        print(f"\n✅ [{self.device_id}] Flujo completo finalizado")
         return True
