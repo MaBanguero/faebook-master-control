@@ -82,7 +82,7 @@ class FacebookAutomator:
             if detener_flag and detener_flag.is_set():
                 return False
 
-            # "Menu" es substring de "Menú" → un solo contains cubre ambos idiomas
+            # "Menu"(EN) y "Menú"(ES) tienen caracteres distintos (u vs ú) → ambos explícitos
             menu_xpaths = [
                 '//*[contains(@content-desc, "Menu") or contains(@content-desc, "Menú")]',
                 '//*[contains(@content-desc, "navigation") or contains(@content-desc, "navegación")]',
@@ -143,12 +143,15 @@ class FacebookAutomator:
 
                 # Filtrar: solo elementos clickeables que no sean UI chrome
                 if clickable == 'true' and label and label not in ('Cerrar', 'Close'):
+                    # Limpiar sufijo de notificaciones: "nombre, N notificación" → "nombre"
+                    # IMPORTANTE: limpiar ANTES de filtrar, porque "notificación" está en skip_keywords
+                    clean_label = label.split(',')[0].strip()
+
                     skip_keywords = [
                         # Navegación y sistema
                         'atrás', 'back', 'inicio', 'home',
                         'recientes', 'recents', 'recent apps',
                         # Tabs de la app
-                        'notificaciones', 'notifications',
                         'panel profesional', 'professional dashboard',
                         'reels', 'buscar', 'search',
                         'mensaj', 'messeng', 'crear', 'create',
@@ -165,9 +168,9 @@ class FacebookAutomator:
                         'log out', 'cerrar sesión', 'logout',
                         'report', 'reportar', 'denunciar',
                     ]
-                    if not any(kw in label.lower() for kw in skip_keywords):
-                        # Limpiar sufijo de notificaciones: "nombre, N notificación" → "nombre"
-                        clean_label = label.split(',')[0].strip()
+                    # NOTA: "notificaciones"/"notifications" ya no están en skip_keywords
+                    # porque los sufijos se limpian con split(',') antes de filtrar
+                    if not any(kw in clean_label.lower() for kw in skip_keywords):
                         cuentas.append(clean_label)
 
             if not cuentas:
