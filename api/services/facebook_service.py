@@ -138,20 +138,15 @@ class FacebookService:
         - cuentas_a_usar = 0 (default): usa TODAS las cuentas disponibles, en orden
         - cuentas_a_usar = N > 0: selecciona N cuentas al azar.
           Si N > disponibles, usa todas las disponibles y advierte.
+        - comentario: string → mismo texto para todas las cuentas
+                      list[str] → rota entre cuentas (cuenta[0] usa comentario[0], etc.)
         """
         for d_id in dispositivos_ids:
-            if isinstance(comentario, list) and len(comentario) > 0:
-                texto_final = random.choice(comentario)
-            elif isinstance(comentario, str):
-                texto_final = comentario
-            else:
-                texto_final = "Excelente contenido! 🔥"
-
             flag = threading.Event()
             self.fb_detener_flags[d_id] = flag
             threading.Thread(
                 target=self._worker_flujo_multi_cuenta,
-                args=(d_id, link, texto_final, flag, tarea_id, cuentas_a_usar),
+                args=(d_id, link, comentario, flag, tarea_id, cuentas_a_usar),
                 daemon=True
             ).start()
 
@@ -159,6 +154,14 @@ class FacebookService:
         try:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
             automator = FacebookAutomator(d_id)
+
+            # Normalizar comentarios a lista para rotación
+            if isinstance(comentario, str):
+                comentarios = [comentario]
+            elif isinstance(comentario, list) and len(comentario) > 0:
+                comentarios = [c for c in comentario if isinstance(c, str) and c.strip()]
+            else:
+                comentarios = ["Excelente contenido! 🔥"]
 
             # Obtener cuentas disponibles
             cuentas = automator.obtener_cuentas()
@@ -170,30 +173,30 @@ class FacebookService:
                 return
 
             print(f"📋 [{d_id}] {total_disponibles} cuentas disponibles: {cuentas}")
+            print(f"💬 [{d_id}] {len(comentarios)} comentario(s): {comentarios}")
 
             # Determinar cuántas y cuáles cuentas usar
             if cuentas_a_usar <= 0:
-                # 0 = usar TODAS las cuentas disponibles, en orden
                 indices_a_usar = list(range(total_disponibles))
                 print(f"   📋 Usando TODAS las cuentas: {total_disponibles} en orden")
             else:
-                # N > 0 = seleccionar N cuentas al azar
                 n = min(cuentas_a_usar, total_disponibles)
                 if cuentas_a_usar > total_disponibles:
                     print(f"   ⚠️ Solicitadas {cuentas_a_usar} cuentas, pero solo hay {total_disponibles}. Usando {n}.")
                 indices_a_usar = random.sample(range(total_disponibles), n)
                 print(f"   🎲 {n} cuentas al azar: índices {indices_a_usar}")
 
-            # Ejecutar flujo en cada cuenta seleccionada
+            # Ejecutar flujo en cada cuenta — rotar comentario por índice
             exitos = 0
             fallos = 0
             for i, idx in enumerate(indices_a_usar):
                 if flag and flag.is_set():
                     break
                 nombre = cuentas[idx]
-                print(f"\n🔁 [{d_id}] Cuenta {i+1}/{len(indices_a_usar)}: '{nombre}' (índice {idx})")
+                texto = comentarios[i % len(comentarios)]  # rotación circular
+                print(f"\n🔁 [{d_id}] Cuenta {i+1}/{len(indices_a_usar)}: '{nombre}' → \"{texto[:40]}...\"")
                 exito, _ = automator.ejecutar_flujo_completo_fb(
-                    link, comentario, flag, indice_inicial=idx
+                    link, texto, flag, indice_inicial=idx
                 )
                 if exito:
                     exitos += 1
