@@ -8,6 +8,41 @@ from api.utils.facebook_automator import FacebookAutomator
 import logging
 
 
+# Banco de variaciones para comentarios únicos
+_VARIACIONES_EMOJI = ["🔥", "👏", "💪", "🚀", "⭐", "💯", "✨", "🎯", "🙌", "😍", "💥", "🏆"]
+_VARIACIONES_INICIO = ["", "Qué ", "Muy ", "Súper ", "Tan ", "Bastante ", "Realmente "]
+_VARIACIONES_FINAL = ["", "!!", "! 👏", "! 🔥", "! 💪", " ✨", " 💯", " 🙌"]
+
+
+def _generar_variaciones(texto_base: str, cantidad: int) -> List[str]:
+    """
+    Genera N variaciones únicas de un texto base para no repetir comentarios.
+    Usa combinaciones de emojis + pequeñas variaciones de texto.
+    """
+    if cantidad <= 1:
+        return [texto_base]
+
+    variaciones = []
+    usadas = set()
+
+    while len(variaciones) < cantidad:
+        inicio = random.choice(_VARIACIONES_INICIO)
+        fin = random.choice(_VARIACIONES_FINAL)
+        emoji = random.choice(_VARIACIONES_EMOJI)
+
+        if inicio:
+            variante = f"{inicio}{texto_base.lower()}{fin} {emoji}"
+        else:
+            variante = f"{texto_base}{fin} {emoji}"
+
+        variante = variante.strip()
+        if variante not in usadas:
+            usadas.add(variante)
+            variaciones.append(variante)
+
+    return variaciones
+
+
 class FacebookService:
     _instance = None
     _lock = threading.Lock()
@@ -214,9 +249,18 @@ class FacebookService:
                     print(f"   ⚠️ Solicitadas {cuentas_a_usar}, solo hay {total_disponibles}. Usando {n}.")
                 indices_a_usar = random.sample(range(total_disponibles), n)
                 print(f"   🎲 {n} cuentas al azar")
+                # Un solo comentario para N cuentas → generar variaciones únicas
+                if n > 1 and len(comentarios) == 1:
+                    comentarios = _generar_variaciones(comentarios[0], n)
+                    print(f"   🔄 {n} variaciones generadas: {comentarios}")
             else:
                 indices_a_usar = list(range(total_disponibles))
-                print(f"   📋 TODAS las {total_disponibles} cuentas en orden")
+                n = total_disponibles
+                print(f"   📋 TODAS las {n} cuentas en orden")
+                # Un solo comentario para todas las cuentas → generar variaciones únicas
+                if n > 1 and len(comentarios) == 1:
+                    comentarios = _generar_variaciones(comentarios[0], n)
+                    print(f"   🔄 {n} variaciones generadas")
 
             # Ejecutar flujo: 1 cuenta = 1 comentario (emparejados por índice)
             exitos = 0
