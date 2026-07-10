@@ -497,11 +497,10 @@ class FacebookAutomator:
         """
         print(f"🚀 [{self.device_id}] Flujo completo en cuenta índice {indice_inicial}")
 
-        # Rotar a la cuenta objetivo (solo si no es la 0, que es la actual por defecto)
-        if indice_inicial > 0:
-            print(f"   🔄 Rotando a cuenta índice {indice_inicial}...")
-            if not self.rotar_perfil_secuencial(indice_inicial, detener_flag):
-                print(f"   ⚠️ No se pudo rotar, continuando en cuenta actual")
+        # Rotar a la cuenta objetivo siempre, incluso índice 0
+        print(f"   🔄 Rotando a cuenta índice {indice_inicial}...")
+        if not self.rotar_perfil_secuencial(indice_inicial, detener_flag):
+            print(f"   ⚠️ No se pudo rotar, continuando en cuenta actual")
 
         # 1. LIKE
         print("\n--- PASO 1: LIKE ---")
