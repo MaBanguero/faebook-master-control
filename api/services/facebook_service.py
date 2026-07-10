@@ -129,6 +129,91 @@ class FacebookService:
                 args=(d_id, link, texto_final, flag, tarea_id),
                 daemon=True
             ).start()
+
+    def ejecutar_flujo_multi_cuenta(self, dispositivos_ids: List[str], link: str,
+                                     comentario, tarea_id: str, cuentas_a_usar: int = 0):
+        """
+        Ejecuta el flujo completo en múltiples cuentas por dispositivo.
+
+        - Si cuentas_a_usar == 0: usa el contador secuencial (igual que flujo_completo normal)
+        - Si cuentas_a_usar > 0: selecciona N cuentas al azar del pool disponible.
+          Si N > disponibles, usa todas las disponibles y advierte.
+        """
+        for d_id in dispositivos_ids:
+            if isinstance(comentario, list) and len(comentario) > 0:
+                texto_final = random.choice(comentario)
+            elif isinstance(comentario, str):
+                texto_final = comentario
+            else:
+                texto_final = "Excelente contenido! 🔥"
+
+            flag = threading.Event()
+            self.fb_detener_flags[d_id] = flag
+            threading.Thread(
+                target=self._worker_flujo_multi_cuenta,
+                args=(d_id, link, texto_final, flag, tarea_id, cuentas_a_usar),
+                daemon=True
+            ).start()
+
+    def _worker_flujo_multi_cuenta(self, d_id, link, comentario, flag, t_id, cuentas_a_usar):
+        try:
+            dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
+            automator = FacebookAutomator(d_id)
+
+            # Obtener cuentas disponibles
+            cuentas = automator.obtener_cuentas()
+            total_disponibles = len(cuentas)
+
+            if not cuentas:
+                print(f"❌ [{d_id}] No se detectaron cuentas")
+                self._finalizar_tarea(d_id, t_id, False)
+                return
+
+            print(f"📋 [{d_id}] {total_disponibles} cuentas disponibles: {cuentas}")
+
+            # Determinar cuántas y cuáles cuentas usar
+            if cuentas_a_usar <= 0:
+                # Modo secuencial: usar contador igual que flujo_completo normal
+                if d_id not in self.contadores_rotacion:
+                    self.contadores_rotacion[d_id] = 0
+                indice = self.contadores_rotacion[d_id]
+                indices_a_usar = [indice % total_disponibles]
+                print(f"   🔢 Modo secuencial: cuenta índice {indices_a_usar[0]}")
+            else:
+                # Modo N cuentas aleatorias
+                n = min(cuentas_a_usar, total_disponibles)
+                if cuentas_a_usar > total_disponibles:
+                    print(f"   ⚠️ Solicitadas {cuentas_a_usar} cuentas, pero solo hay {total_disponibles}. Usando {n}.")
+                indices_a_usar = random.sample(range(total_disponibles), n)
+                print(f"   🎲 {n} cuentas al azar: índices {indices_a_usar}")
+
+            # Ejecutar flujo en cada cuenta seleccionada
+            exitos = 0
+            fallos = 0
+            for i, idx in enumerate(indices_a_usar):
+                if flag and flag.is_set():
+                    break
+                nombre = cuentas[idx]
+                print(f"\n🔁 [{d_id}] Cuenta {i+1}/{len(indices_a_usar)}: '{nombre}' (índice {idx})")
+                exito, _ = automator.ejecutar_flujo_completo_fb(
+                    link, comentario, flag, indice_inicial=idx
+                )
+                if exito:
+                    exitos += 1
+                else:
+                    fallos += 1
+
+            # Actualizar contador para modo secuencial
+            if cuentas_a_usar <= 0 and indices_a_usar:
+                self.contadores_rotacion[d_id] = (indices_a_usar[0] + 1) % total_disponibles
+
+            exito_total = exitos > 0 and fallos == 0
+            print(f"\n📊 [{d_id}] Multi-flujo: {exitos} éxitos, {fallos} fallos de {len(indices_a_usar)} cuentas")
+            self._finalizar_tarea(d_id, t_id, exito_total)
+
+        except Exception as e:
+            print(f"❌ Error en worker multi-cuenta: {e}")
+            self._finalizar_tarea(d_id, t_id, False)
     def _worker_flujo_completo(self, d_id, link, comentario, flag, t_id):
         try:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)

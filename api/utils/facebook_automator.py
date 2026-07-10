@@ -152,53 +152,7 @@ class FacebookAutomator:
 
             # Dumpear la jerarquía COMPLETA después de expandir
             xml = self.device.dump_hierarchy()
-            import xml.etree.ElementTree as ET
-            root = ET.fromstring(xml)
-
-            cuentas = []
-            for el in root.iter():
-                txt = el.attrib.get('text', '')
-                desc = el.attrib.get('content-desc', '')
-                clickable = el.attrib.get('clickable', 'false')
-                label = txt or desc
-
-                # Filtrar: solo elementos clickeables que no sean UI chrome
-                if clickable == 'true' and label and label not in ('Cerrar', 'Close'):
-                    # Limpiar sufijo de notificaciones: "nombre, N notificación" → "nombre"
-                    # IMPORTANTE: limpiar ANTES de filtrar, porque "notificación" está en skip_keywords
-                    clean_label = label.split(',')[0].strip()
-
-                    skip_keywords = [
-                        # Navegación y sistema
-                        'atrás', 'back', 'inicio', 'home',
-                        'recientes', 'recents', 'recent apps',
-                        # Tabs de la app
-                        'panel profesional', 'professional dashboard',
-                        'reels', 'buscar', 'search',
-                        'mensaj', 'messeng', 'crear', 'create',
-                        'historia', 'story', 'guardado', 'saved',
-                        'recuerdos', 'memories', 'eventos', 'events',
-                        'grupos', 'groups', 'páginas', 'pages',
-                        'amigos', 'friends', 'marketplace',
-                        # Configuración
-                        'configuración', 'settings', 'ayuda', 'help',
-                        'ver todas', 'see all', 'menú', 'menu',
-                        # Panel de cuentas (no son perfiles)
-                        'ver todo', 'see all',  # botón expandir lista
-                        'ir al centro de cuentas', 'accounts center',
-                        'go to accounts center',
-                        'búsqueda', 'ícono', 'icono', 'search icon',
-                        'barra de navegación', 'navigation bar',
-                        # Otros
-                        'feed', 'news feed', 'noticias',
-                        'dark mode', 'modo oscuro',
-                        'log out', 'cerrar sesión', 'logout',
-                        'report', 'reportar', 'denunciar',
-                    ]
-                    # NOTA: "notificaciones"/"notifications" ya no están en skip_keywords
-                    # porque los sufijos se limpian con split(',') antes de filtrar
-                    if not any(kw in clean_label.lower() for kw in skip_keywords):
-                        cuentas.append(clean_label)
+            cuentas = self._parse_cuentas_xml(xml)
 
             if not cuentas:
                 print(f"   ❌ No se detectaron cuentas en la lista")
@@ -220,6 +174,8 @@ class FacebookAutomator:
                 return True
             else:
                 # Último recurso: click por coordenadas del elemento encontrado
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(xml)
                 for el in root.iter():
                     d = el.attrib.get('content-desc', '')
                     t = el.attrib.get('text', '')
@@ -481,6 +437,104 @@ class FacebookAutomator:
     # ═══════════════════════════════════════════════════════════════
     # FLUJO COMPLETO
     # ═══════════════════════════════════════════════════════════════
+
+    def obtener_cuentas(self):
+        """
+        Navega al panel de cuentas y devuelve la lista de nombres de perfiles
+        disponibles, sin cambiar de cuenta.
+
+        Returns:
+            list[str]: nombres de cuentas disponibles, o lista vacía si falla.
+        """
+        try:
+            self.device.app_stop("com.facebook.katana")
+            time.sleep(2)
+            self.device.app_start("com.facebook.katana")
+            time.sleep(8)
+
+            # Menú
+            menu_xpaths = [
+                '//*[contains(@content-desc, "Menu") or contains(@content-desc, "Menú")]',
+                '//*[contains(@content-desc, "navigation") or contains(@content-desc, "navegación")]',
+            ]
+            for xp in menu_xpaths:
+                if self.device.xpath(xp).wait(timeout=3):
+                    self.device.xpath(xp).click()
+                    break
+            else:
+                return []
+            time.sleep(3)
+
+            # Cambiar perfil
+            cambiar_xpaths = [
+                '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil")]',
+                '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
+                '//*[contains(@content-desc, "change profile") or contains(@content-desc, "change account")]',
+            ]
+            for xp in cambiar_xpaths:
+                if self.device.xpath(xp).wait(timeout=2):
+                    self.device.xpath(xp).click()
+                    break
+            else:
+                return []
+            time.sleep(3)
+
+            # Expandir "Ver todo" si existe
+            lista_expandida = False
+            ver_todo_xpaths = [
+                '//*[contains(@text, "Ver todo") or contains(@content-desc, "Ver todo")]',
+                '//*[contains(@text, "See all") or contains(@content-desc, "See all")]',
+            ]
+            for xp in ver_todo_xpaths:
+                if self.device.xpath(xp).wait(timeout=5):
+                    self.device.xpath(xp).click()
+                    time.sleep(2)
+                    lista_expandida = True
+                    break
+
+            if lista_expandida:
+                for _ in range(3):
+                    self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
+                    time.sleep(1)
+
+            # Parsear cuentas
+            xml = self.device.dump_hierarchy()
+            return self._parse_cuentas_xml(xml)
+
+        except Exception as e:
+            print(f"   ❌ Error obteniendo cuentas: {e}")
+            return []
+
+    def _parse_cuentas_xml(self, xml: str):
+        """Parsea el XML del panel de cuentas y devuelve la lista de nombres."""
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(xml)
+
+        skip_keywords = [
+            'atrás', 'back', 'inicio', 'home', 'recientes', 'recents', 'recent apps',
+            'panel profesional', 'professional dashboard', 'reels', 'buscar', 'search',
+            'mensaj', 'messeng', 'crear', 'create', 'historia', 'story', 'guardado', 'saved',
+            'recuerdos', 'memories', 'eventos', 'events', 'grupos', 'groups', 'páginas', 'pages',
+            'amigos', 'friends', 'marketplace', 'configuración', 'settings', 'ayuda', 'help',
+            'ver todas', 'see all', 'menú', 'menu',
+            'ver todo', 'ir al centro de cuentas', 'accounts center', 'go to accounts center',
+            'búsqueda', 'ícono', 'icono', 'search icon', 'barra de navegación', 'navigation bar',
+            'feed', 'news feed', 'noticias', 'dark mode', 'modo oscuro',
+            'log out', 'cerrar sesión', 'logout', 'report', 'reportar', 'denunciar',
+        ]
+
+        cuentas = []
+        for el in root.iter():
+            txt = el.attrib.get('text', '')
+            desc = el.attrib.get('content-desc', '')
+            clickable = el.attrib.get('clickable', 'false')
+            label = txt or desc
+
+            if clickable == 'true' and label and label not in ('Cerrar', 'Close'):
+                clean_label = label.split(',')[0].strip()
+                if not any(kw in clean_label.lower() for kw in skip_keywords):
+                    cuentas.append(clean_label)
+        return cuentas
 
     def ejecutar_flujo_completo_fb(self, link: str, texto_comentario: str, detener_flag=None,
                                     indice_inicial: int = 0):

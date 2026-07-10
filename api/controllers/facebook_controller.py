@@ -131,3 +131,51 @@ async def ejecutar_flujo_completo(request: dict):
         "tarea_id": tarea.id,
         "message": "Iniciando secuencia: Like -> Comentario -> Compartir"
     }
+
+
+@router.post("/facebook/flujo-multi-cuenta/ejecutar")
+async def ejecutar_flujo_multi_cuenta(request: dict):
+    """
+    Ejecuta el flujo completo (like + comentario + compartir) en múltiples cuentas.
+
+    Parámetros:
+        - dispositivos_ids: lista de IDs de dispositivos
+        - link_post: URL del reel/post
+        - comentario: texto del comentario
+        - cuentas_a_usar: (opcional) número de cuentas a usar.
+          0 = modo secuencial (1 cuenta, avanza con cada llamada)
+          N > 0 = selecciona N cuentas al azar. Si N > disponibles, usa todas.
+    """
+    dispositivos_ids = request.get('dispositivos_ids', [])
+    link = request.get('link_post', '')
+    comentario = request.get('comentario', '')
+    cuentas_a_usar = request.get('cuentas_a_usar', 0)
+
+    if not dispositivos_ids or not link:
+        raise HTTPException(status_code=400, detail="Faltan dispositivos_ids o link_post")
+
+    tarea = await tareas_service.crear_tarea(
+        tipo="fb_flujo_multi_cuenta",
+        dispositivos_ids=dispositivos_ids,
+        config={
+            "link": link,
+            "comentario": comentario,
+            "cuentas_a_usar": cuentas_a_usar,
+            "acciones": ["like", "comentario", "compartir"]
+        },
+        total_esperado=len(dispositivos_ids)
+    )
+
+    facebook_service.ejecutar_flujo_multi_cuenta(
+        dispositivos_ids=dispositivos_ids,
+        link=link,
+        comentario=comentario,
+        tarea_id=tarea.id,
+        cuentas_a_usar=cuentas_a_usar
+    )
+
+    return {
+        "success": True,
+        "tarea_id": tarea.id,
+        "message": f"Iniciando flujo multi-cuenta (cuentas_a_usar={cuentas_a_usar})"
+    }
