@@ -8,41 +8,6 @@ from api.utils.facebook_automator import FacebookAutomator
 import logging
 
 
-# Banco de variaciones para comentarios únicos
-_VARIACIONES_EMOJI = ["🔥", "👏", "💪", "🚀", "⭐", "💯", "✨", "🎯", "🙌", "😍", "💥", "🏆"]
-_VARIACIONES_INICIO = ["", "Qué ", "Muy ", "Súper ", "Tan ", "Bastante ", "Realmente "]
-_VARIACIONES_FINAL = ["", "!!", "! 👏", "! 🔥", "! 💪", " ✨", " 💯", " 🙌"]
-
-
-def _generar_variaciones(texto_base: str, cantidad: int) -> List[str]:
-    """
-    Genera N variaciones únicas de un texto base para no repetir comentarios.
-    Usa combinaciones de emojis + pequeñas variaciones de texto.
-    """
-    if cantidad <= 1:
-        return [texto_base]
-
-    variaciones = []
-    usadas = set()
-
-    while len(variaciones) < cantidad:
-        inicio = random.choice(_VARIACIONES_INICIO)
-        fin = random.choice(_VARIACIONES_FINAL)
-        emoji = random.choice(_VARIACIONES_EMOJI)
-
-        if inicio:
-            variante = f"{inicio}{texto_base.lower()}{fin} {emoji}"
-        else:
-            variante = f"{texto_base}{fin} {emoji}"
-
-        variante = variante.strip()
-        if variante not in usadas:
-            usadas.add(variante)
-            variaciones.append(variante)
-
-    return variaciones
-
-
 class FacebookService:
     _instance = None
     _lock = threading.Lock()
@@ -170,12 +135,11 @@ class FacebookService:
         """
         Ejecuta el flujo completo en múltiples cuentas por dispositivo.
 
-        Comentarios:
-          - string → mismo texto para todas las cuentas. Usa cuentas_a_usar cuentas.
-          - list[str] → 1 comentario = 1 cuenta. La lista se reparte entre dispositivos.
-            Ej: 9 comentarios, 3 dispositivos → 3 comentarios por dispositivo.
+        Regla: 1 comentario = 1 cuenta. Sin repeticiones.
 
-        cuentas_a_usar se ignora si comentario es lista (la lista dicta el número).
+        - comentario string → 1 cuenta al azar, el comentario se usa una sola vez
+        - comentario list[str] → N cuentas al azar, un comentario distinto por cuenta
+        - Multi-dispositivo: la lista se reparte equitativamente entre dispositivos
         """
         # Normalizar comentarios
         if isinstance(comentario, list) and len(comentario) > 0:
@@ -189,35 +153,26 @@ class FacebookService:
 
         for i, d_id in enumerate(dispositivos_ids):
             # Repartir comentarios entre dispositivos
-            if len(comentarios) > 1:
-                # Dividir equitativamente: dispositivo i toma su porción
+            if len(comentarios) > 1 and num_dispositivos > 1:
                 chunk_size = max(1, len(comentarios) // num_dispositivos)
                 inicio = i * chunk_size
                 if i == num_dispositivos - 1:
-                    # Último dispositivo se lleva el resto
                     comentarios_dispositivo = comentarios[inicio:]
                 else:
                     comentarios_dispositivo = comentarios[inicio:inicio + chunk_size]
-                cuentas_efectivas = 0  # la lista dicta el número
             else:
                 comentarios_dispositivo = comentarios
-                cuentas_efectivas = cuentas_a_usar
 
             flag = threading.Event()
             self.fb_detener_flags[d_id] = flag
             threading.Thread(
                 target=self._worker_flujo_multi_cuenta,
-                args=(d_id, link, comentarios_dispositivo, flag, tarea_id, cuentas_efectivas),
+                args=(d_id, link, comentarios_dispositivo, flag, tarea_id),
                 daemon=True
             ).start()
 
-    def _worker_flujo_multi_cuenta(self, d_id, link, comentarios, flag, t_id, cuentas_a_usar):
-        """
-        Worker para un dispositivo.
-
-        - comentarios: lista de strings (1 por cuenta a usar)
-        - cuentas_a_usar: solo se usa si comentarios tiene 1 solo elemento
-        """
+    def _worker_flujo_multi_cuenta(self, d_id, link, comentarios, flag, t_id):
+        """Worker para un dispositivo. 1 comentario = 1 cuenta, sin repeticiones."""
         try:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
             automator = FacebookAutomator(d_id)
@@ -235,32 +190,18 @@ class FacebookService:
             print(f"💬 [{d_id}] {len(comentarios)} comentario(s) asignados")
 
             # Determinar cuántas y cuáles cuentas usar
+            # Regla: 1 comentario = 1 cuenta. Si hay 1 solo, se usa una vez.
             if len(comentarios) > 1:
-                # La lista de comentarios dicta el número de cuentas
                 n = min(len(comentarios), total_disponibles)
                 if len(comentarios) > total_disponibles:
                     print(f"   ⚠️ {len(comentarios)} comentarios pero solo {total_disponibles} cuentas. Usando {n}.")
                     comentarios = comentarios[:n]
                 indices_a_usar = random.sample(range(total_disponibles), n)
                 print(f"   🎲 {n} cuentas al azar (1 por comentario)")
-            elif cuentas_a_usar > 0:
-                n = min(cuentas_a_usar, total_disponibles)
-                if cuentas_a_usar > total_disponibles:
-                    print(f"   ⚠️ Solicitadas {cuentas_a_usar}, solo hay {total_disponibles}. Usando {n}.")
-                indices_a_usar = random.sample(range(total_disponibles), n)
-                print(f"   🎲 {n} cuentas al azar")
-                # Un solo comentario para N cuentas → generar variaciones únicas
-                if n > 1 and len(comentarios) == 1:
-                    comentarios = _generar_variaciones(comentarios[0], n)
-                    print(f"   🔄 {n} variaciones generadas: {comentarios}")
             else:
-                indices_a_usar = list(range(total_disponibles))
-                n = total_disponibles
-                print(f"   📋 TODAS las {n} cuentas en orden")
-                # Un solo comentario para todas las cuentas → generar variaciones únicas
-                if n > 1 and len(comentarios) == 1:
-                    comentarios = _generar_variaciones(comentarios[0], n)
-                    print(f"   🔄 {n} variaciones generadas")
+                # 1 solo comentario → 1 sola cuenta, se usa una vez
+                indices_a_usar = [random.randrange(total_disponibles)]
+                print(f"   🎯 1 comentario → 1 cuenta al azar (índice {indices_a_usar[0]})")
 
             # Ejecutar flujo: 1 cuenta = 1 comentario (emparejados por índice)
             exitos = 0
