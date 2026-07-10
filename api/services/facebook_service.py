@@ -134,8 +134,18 @@ class FacebookService:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
             automator = FacebookAutomator(d_id)
 
-            # Ejecuta la secuencia Like -> Comentario -> Compartir
-            exito = automator.ejecutar_flujo_completo_fb(link, comentario, flag)
+            # Obtener el índice actual de rotación para este dispositivo
+            if d_id not in self.contadores_rotacion:
+                self.contadores_rotacion[d_id] = 0
+            indice = self.contadores_rotacion[d_id]
+
+            # Ejecuta Like(cuenta[N]) → Comentario(cuenta[N+1]) → Compartir(cuenta[N+2])
+            exito, siguiente_indice = automator.ejecutar_flujo_completo_fb(
+                link, comentario, flag, indice_inicial=indice
+            )
+
+            # Guardar el siguiente índice para la próxima ejecución
+            self.contadores_rotacion[d_id] = siguiente_indice
 
             self._finalizar_tarea(d_id, t_id, exito)
         except Exception as e:

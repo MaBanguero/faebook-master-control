@@ -455,32 +455,52 @@ class FacebookAutomator:
     # FLUJO COMPLETO
     # ═══════════════════════════════════════════════════════════════
 
-    def ejecutar_flujo_completo_fb(self, link: str, texto_comentario: str, detener_flag=None):
+    def ejecutar_flujo_completo_fb(self, link: str, texto_comentario: str, detener_flag=None,
+                                    indice_inicial: int = 0):
         """
-        Ejecuta Like → Comentario → Compartir en secuencia.
-        Cierra la app después de cada acción.
-        """
-        print(f"🚀 [{self.device_id}] Iniciando flujo completo")
+        Ejecuta Like → Comentario → Compartir en secuencia, rotando de cuenta
+        entre cada acción para diversificar la actividad.
 
-        # 1. LIKE
-        print("\n--- PASO 1: LIKE ---")
+        - Like:    cuenta[indice_inicial]
+        - Comentario: cuenta[indice_inicial + 1]
+        - Compartir:  cuenta[indice_inicial + 2]
+
+        Returns:
+            tuple: (exito: bool, siguiente_indice: int)
+                   siguiente_indice = indice_inicial + 3, listo para el próximo flujo.
+        """
+        print(f"🚀 [{self.device_id}] Iniciando flujo completo (cuenta inicial: {indice_inicial})")
+
+        siguiente = indice_inicial
+
+        # 1. LIKE — cuenta actual
+        print(f"\n--- PASO 1: LIKE (cuenta índice {siguiente}) ---")
+        if siguiente > 0:
+            if not self.rotar_perfil_secuencial(siguiente, detener_flag):
+                print(f"   ⚠️ No se pudo rotar a cuenta {siguiente}, continuando en cuenta actual")
         self.proceso_like_facebook(link, detener_flag)
         time.sleep(3)
         self.cerrar_facebook()
         if detener_flag and detener_flag.is_set():
-            return False
+            return False, siguiente
+        siguiente += 1
 
-        # 2. COMENTARIO
-        print("\n--- PASO 2: COMENTARIO ---")
+        # 2. COMENTARIO — rotar a siguiente cuenta
+        print(f"\n--- PASO 2: COMENTARIO (cuenta índice {siguiente}) ---")
+        if not self.rotar_perfil_secuencial(siguiente, detener_flag):
+            print(f"   ⚠️ No se pudo rotar a cuenta {siguiente}, continuando en cuenta actual")
         self.proceso_comentario_reels(link, texto_comentario, detener_flag)
         time.sleep(3)
         self.cerrar_facebook()
+        siguiente += 1
 
-        # 3. COMPARTIR
-        print("\n--- PASO 3: COMPARTIR ---")
+        # 3. COMPARTIR — rotar a siguiente cuenta
+        print(f"\n--- PASO 3: COMPARTIR (cuenta índice {siguiente}) ---")
+        if not self.rotar_perfil_secuencial(siguiente, detener_flag):
+            print(f"   ⚠️ No se pudo rotar a cuenta {siguiente}, continuando en cuenta actual")
         self.proceso_compartir_post(link, detener_flag)
         time.sleep(3)
         self.cerrar_facebook()
 
-        print(f"\n✅ [{self.device_id}] Flujo completo finalizado")
-        return True
+        print(f"\n✅ [{self.device_id}] Flujo completo finalizado. Próximo índice: {siguiente + 1}")
+        return True, siguiente + 1
