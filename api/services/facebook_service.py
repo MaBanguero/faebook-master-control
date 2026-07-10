@@ -139,7 +139,8 @@ class FacebookService:
                 self.contadores_rotacion[d_id] = 0
             indice = self.contadores_rotacion[d_id]
 
-            # Ejecuta Like(cuenta[N]) → Comentario(cuenta[N+1]) → Compartir(cuenta[N+2])
+            # Ejecuta Like + Comentario + Compartir todo en la cuenta[N]
+            # El contador avanza +1 para que la próxima ejecución use cuenta[N+1]
             exito, siguiente_indice = automator.ejecutar_flujo_completo_fb(
                 link, comentario, flag, indice_inicial=indice
             )
