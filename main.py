@@ -13,7 +13,9 @@ os.environ['ANDROID_ADB_SERVER_PORT'] = str(CUSTOM_ADB_PORT)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.controllers import dispositivo_controller, tareas_controller, facebook_controller
+from fastapi.staticfiles import StaticFiles
+from api.controllers import dispositivo_controller, tareas_controller, facebook_controller, tiktok_controller, instagram_controller
+from api.controllers.ai_controller import router as ai_router
 from api.utils.adb_custom_server import custom_adb_manager
 
 # En Ubuntu, simplemente usamos "adb". Asegúrate de tenerlo instalado: sudo apt install adb
@@ -94,11 +96,17 @@ async def startup_event():
 app.include_router(dispositivo_controller.router, prefix="/api", tags=["dispositivos"])
 app.include_router(tareas_controller.router, prefix="/api", tags=["tareas"])
 app.include_router(facebook_controller.router, prefix="/api", tags=["facebook"])
+app.include_router(tiktok_controller.router, prefix="/api", tags=["tiktok"])
+app.include_router(instagram_controller.router, prefix="/api", tags=["instagram"])
+app.include_router(ai_router, prefix="/api", tags=["ia"])
 
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "os": "ubuntu/linux"}
+
+# Servir el frontend estático (debe ir al final)
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 
 if __name__ == "__main__":

@@ -163,11 +163,7 @@ class FacebookService:
             else:
                 comentarios_dispositivo = comentarios
 
-            # Saltar dispositivo si no le tocaron comentarios
-            if not comentarios_dispositivo:
-                print(f"⏭️ [{d_id}] Sin comentarios asignados, saltando")
-                continue
-
+            # Siempre lanzar worker — si no hay comentarios, hace like + compartir sin comentar
             flag = threading.Event()
             self.fb_detener_flags[d_id] = flag
             threading.Thread(
@@ -195,8 +191,12 @@ class FacebookService:
             print(f"💬 [{d_id}] {len(comentarios)} comentario(s) asignados")
 
             # Determinar cuántas y cuáles cuentas usar
-            # Regla: 1 comentario = 1 cuenta. Si hay 1 solo, se usa una vez.
-            if len(comentarios) > 1:
+            if not comentarios:
+                # Sin comentarios → like + compartir en TODAS las cuentas
+                indices_a_usar = list(range(total_disponibles))
+                comentarios = [""] * total_disponibles  # placeholder vacío
+                print(f"   🔇 0 comentarios → like + compartir en las {total_disponibles} cuentas")
+            elif len(comentarios) > 1:
                 n = min(len(comentarios), total_disponibles)
                 if len(comentarios) > total_disponibles:
                     print(f"   ⚠️ {len(comentarios)} comentarios pero solo {total_disponibles} cuentas. Usando {n}.")
@@ -254,6 +254,38 @@ class FacebookService:
             self._finalizar_tarea(d_id, t_id, exito)
         except Exception as e:
             print(f"Error en worker flujo completo: {e}")
+            self._finalizar_tarea(d_id, t_id, False)
+
+    # ── CALENTAMIENTO ──
+
+    def ejecutar_calentamiento(self, dispositivos_ids: List[str], tarea_id: str):
+        """Lanza calentamiento ultra-random en cada dispositivo."""
+        for d_id in dispositivos_ids:
+            if d_id not in self.contadores_rotacion:
+                self.contadores_rotacion[d_id] = 0
+            indice = self.contadores_rotacion[d_id]
+
+            flag = threading.Event()
+            self.fb_detener_flags[d_id] = flag
+            threading.Thread(
+                target=self._worker_calentamiento,
+                args=(d_id, indice, flag, tarea_id),
+                daemon=True,
+            ).start()
+
+    def _worker_calentamiento(self, d_id: str, indice: int, flag: threading.Event, t_id: str):
+        """Worker de calentamiento Facebook en un dispositivo."""
+        try:
+            dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
+            automator = FacebookAutomator(d_id)
+            siguiente = automator.proceso_calentamiento(
+                detener_flag=flag,
+                indice_inicial=indice,
+            )
+            self.contadores_rotacion[d_id] = siguiente
+            self._finalizar_tarea(d_id, t_id, True)
+        except Exception as e:
+            print(f"❌ [{d_id}] Error calentamiento FB: {e}", flush=True)
             self._finalizar_tarea(d_id, t_id, False)
 
 

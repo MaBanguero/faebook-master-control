@@ -22,12 +22,13 @@ from api.utils.comments_bank import get_random_comment
 class TiktokAutomator:
     """Clase para automatización de TikTok con uiautomator2"""
 
-    def __init__(self, device_id: str):
+    def __init__(self, device_id: str, skip_reset: bool = False):
         """
         Inicializa la conexión con el dispositivo
         
         Args:
             device_id: ID del dispositivo ADB
+            skip_reset: Si True, omite el reset de servicios (ya se hizo en el startup)
         """
         self.device_id = device_id
         self.device: Optional[u2.Device] = None
@@ -42,8 +43,11 @@ class TiktokAutomator:
         if not self.verificar_y_reconectar():
             raise Exception(f"Dispositivo {self.device_id} no disponible")
         
-        # PASO 2: Resetear dispositivo ANTES de conectar
-        self._reset_device_services()
+        # PASO 2: Resetear dispositivo ANTES de conectar (solo si no se omitió)
+        if not skip_reset:
+            self._reset_device_services()
+        else:
+            print(f"⏩ [{self.device_id}] Reset omitido (ya realizado en startup)")
         
         # PASO 3: Conectar con uiautomator2
         self.connect()
@@ -190,6 +194,203 @@ class TiktokAutomator:
         """Sleep corto entre acciones"""
         time.sleep(seconds)
 
+    def _dismiss_open_with_dialog(self) -> bool:
+        """Descarta el modal 'Abrir con' si aparece al abrir un link."""
+        try:
+            # Buscar el texto "Abrir con" o "Open with" en el diálogo
+            abrir_con = '//*[contains(@text,"Abrir con")]'
+            open_with = '//*[contains(@text,"Open with")]'
+            dialog_title = '//*[contains(@resource-id,"alertTitle") or contains(@resource-id,"title")]'
+
+            # Esperar un momento a que aparezca el diálogo
+            self.short_sleep(1.5)
+
+            if self.element_exists(abrir_con) or self.element_exists(open_with):
+                print(f"📋 [{self.device_id}] Detectado modal 'Abrir con'")
+
+                # Opción 1: Tocar "TikTok" en la lista de apps
+                tiktok_item = (
+                    '//*[@text="TikTok"] | '
+                    '//*[contains(@text,"TikTok")] | '
+                    '//*[contains(@content-desc,"TikTok")]'
+                )
+                if self.element_exists(tiktok_item):
+                    # Hacer doble tap o click normal sobre TikTok
+                    self.short_sleep(0.5)
+                    self.device.xpath(tiktok_item).click()
+                    print(f"   ✅ TikTok seleccionado en modal")
+
+                # Opción 2: Tocar "Solo una vez" o "Just once"
+                solo_una_vez = '//*[contains(@text,"Solo una vez") or contains(@text,"Just once")]'
+                siempre = '//*[contains(@text,"Siempre") or contains(@text,"Always")]'
+                if self.element_exists(siempre):
+                    self.device.xpath(siempre).click()
+                    print(f"   ✅ 'Siempre' seleccionado")
+                elif self.element_exists(solo_una_vez):
+                    self.device.xpath(solo_una_vez).click()
+                    print(f"   ✅ 'Solo una vez' seleccionado")
+
+                self.random_sleep(1, 2)
+                return True
+
+            return False  # No se encontró el modal
+        except Exception as e:
+            print(f"⚠️ [{self.device_id}] Error descartando modal: {e}")
+            return False
+
+    def _dismiss_tiktok_modals(self, max_attempts: int = 4) -> bool:
+        """
+        Descarta modales comunes de TikTok: 'Guardar datos', 'Acceso a contactos',
+        'Notificaciones', 'Sincronizar contactos', y otros diálogos de onboarding.
+
+        Deniega todos los permisos y omite todas las pantallas de configuración.
+
+        Args:
+            max_attempts: Número máximo de intentos (cada iteración descarta UN modal)
+
+        Returns:
+            True si al menos un modal fue descartado, False si no se encontró ninguno
+        """
+        dismissed_any = False
+
+        # Mapeo de textos de modal → textos del botón para descartar (ES + EN)
+        # Cada entrada: (textos_del_modal, textos_del_boton_dismiss)
+        modal_patterns = [
+            # Guardar datos / Data Saver
+            (
+                ["Guardar datos", "Ahorrar datos", "Modo de ahorro", "ahorrar datos",
+                 "Data Saver", "Save data", "Data saving"],
+                ["Ahora no", "Omitir", "Saltar", "Not now", "Skip", "No, gracias",
+                 "No thanks", "Desactivado", "Cancelar", "Cancel"]
+            ),
+            # Contactos / Contacts
+            (
+                ["Acceder a tus contactos", "Sincronizar contactos", "Encontrar amigos",
+                 "Tus contactos", "Sincroniza tus contactos", "acceso a contactos",
+                 "Access your contacts", "Find friends", "Sync contacts",
+                 "Upload contacts", "Find your friends"],
+                ["Denegar", "Ahora no", "Omitir", "Saltar", "Deny", "Not now",
+                 "Skip", "No permitir", "Don't allow", "Cancelar", "Cancel"]
+            ),
+            # Notificaciones / Notifications
+            (
+                ["Activar notificaciones", "Recibir notificaciones",
+                 "Permitir notificaciones", "notificaciones push",
+                 "Turn on notifications", "Enable notifications",
+                 "Get notifications", "Stay in the loop"],
+                ["Ahora no", "Omitir", "Saltar", "Not now", "Skip",
+                 "No, gracias", "Maybe later", "Cancelar", "Cancel"]
+            ),
+            # Perfil / Profile setup (find friends, interests, etc.)
+            (
+                ["Completa tu perfil", "Elige tus intereses",
+                 "Personaliza tu experiencia", "Sigue a personas",
+                 "Crea tu perfil", "Configura tu cuenta",
+                 "Complete your profile", "Pick your interests"],
+                ["Omitir", "Saltar", "Ahora no", "Skip", "Not now",
+                 "Maybe later", "Cancelar", "Cancel"]
+            ),
+            # Generic deny-able permissions
+            (
+                ["Permitir", "Permiso", "Permission",
+                 "Acceder a", "Access your", "Quiere acceder"],
+                ["Denegar", "Deny", "Ahora no", "Not now",
+                 "No permitir", "Don't allow"]
+            ),
+        ]
+
+        for attempt in range(max_attempts):
+            dismissed_this_round = False
+
+            try:
+                # Dump hierarchy once per attempt
+                xml = self.device.dump_hierarchy()
+
+                for modal_texts, dismiss_texts in modal_patterns:
+                    # Check if any modal text is present
+                    modal_found = False
+                    for mt in modal_texts:
+                        if mt.lower() in xml.lower():
+                            modal_found = True
+                            break
+
+                    if not modal_found:
+                        continue
+
+                    # Modal detected → find and click the dismiss button
+                    print(f"[TT][{self.device_id}] Modal detectado (intento {attempt+1})")
+
+                    # Try each dismiss text
+                    for dt in dismiss_texts:
+                        # Try by text
+                        el = self.device(text=dt)
+                        if el.exists(timeout=0.5):
+                            print(f"   🚫 [{self.device_id}] Clickeando '{dt}' para descartar modal")
+                            el.click()
+                            dismissed_any = True
+                            dismissed_this_round = True
+                            self.short_sleep(1.5)
+                            break
+
+                        # Try by content-desc
+                        el = self.device(description=dt)
+                        if el.exists(timeout=0.5):
+                            print(f"   🚫 [{self.device_id}] Clickeando '{dt}' (desc) para descartar modal")
+                            el.click()
+                            dismissed_any = True
+                            dismissed_this_round = True
+                            self.short_sleep(1.5)
+                            break
+
+                    if dismissed_this_round:
+                        break  # Re-scan hierarchy after dismissing
+
+                # Also try pressing BACK if a modal might be present but no button found
+                if not dismissed_this_round:
+                    # Check for common Android permission dialog patterns
+                    permission_dialogs = [
+                        'com.android.permissioncontroller',
+                        'com.google.android.permissioncontroller',
+                        'grantPermissions',
+                        'permission_allow_button',
+                        'permission_deny_button',
+                    ]
+                    for pd in permission_dialogs:
+                        if pd in xml and not dismissed_this_round:
+                            # Try to find and click Deny button via common resource-IDs
+                            deny_rids = [
+                                'com.android.permissioncontroller:id/permission_deny_button',
+                                'com.android.packageinstaller:id/permission_deny_button',
+                                'android:id/button2',
+                            ]
+                            for rid in deny_rids:
+                                el = self.device(resourceId=rid)
+                                if el.exists(timeout=0.5):
+                                    print(f"   🚫 [{self.device_id}] Denegando permiso Android (rid={rid})")
+                                    el.click()
+                                    dismissed_any = True
+                                    dismissed_this_round = True
+                                    self.short_sleep(1.5)
+                                    break
+                            if dismissed_this_round:
+                                break
+
+                # If nothing to dismiss, we're done
+                if not dismissed_this_round:
+                    break
+
+                # Small sleep between attempts to let UI settle
+                self.short_sleep(1)
+
+            except Exception as e:
+                print(f"⚠️ [{self.device_id}] Error descartando modales: {e}")
+                continue
+
+        if dismissed_any:
+            print(f"[TT][{self.device_id}] Modales descartados. Continuando flujo...")
+
+        return dismissed_any
+
     def open_tiktok_link(self, link_link: str):
         """
         Abre un link de TikTok usando deep link
@@ -199,9 +400,22 @@ class TiktokAutomator:
         """
         try:
             print(f"📱 [{self.device_id}] Abriendo TikTok link...")
-            # Usar el deep link para abrir directamente en la app
-            self.short_sleep(5)
-            self.device.shell(f'am start -a android.intent.action.VIEW -d "{link_link}"')
+            self.short_sleep(3)
+
+            # Método 1: Abrir con el package explícito para evitar el modal "Abrir con"
+            self.device.shell(
+                f'am start -a android.intent.action.VIEW -d "{link_link}" '
+                f'com.zhiliaoapp.musically'
+            )
+
+            # Método 2 (fallback): si falla el package explícito, usar monkey
+            # self.device.shell(f'monkey -p com.zhiliaoapp.musically 1')
+
+            # Descartar modal "Abrir con" si aparece de todos modos
+            self._dismiss_open_with_dialog()
+            # Descartar modales de onboarding/permisos
+            self._dismiss_tiktok_modals()
+
             print(f"✅ [{self.device_id}] Link abierto")
             self.random_sleep(2,4)
             self.device.set_orientation("natural")
@@ -466,119 +680,80 @@ class TiktokAutomator:
     def cambiar_cuenta(self, segundos_min, segundos_max) -> bool:
         """
         Cambia de cuenta en TikTok evitando repetir usuarios ya utilizados.
+        Usa resource-IDs y content-desc reales obtenidos del dump de UI.
         """
         try:
             print(f"[TT][{self.device_id}] Rotando cuenta de TikTok...")
             self.device.app_stop("com.zhiliaoapp.musically")
             self.random_sleep(2, 6)
-
-            # Espera adicional entre segundos_min y segundos_max para simular descanso humano
-            self.random_sleep(5, 15) #TODO PENDIENTE DE USAR segundos_min, segundos_max
-    
+            self.random_sleep(segundos_min, segundos_max)
             self.device.app_start("com.zhiliaoapp.musically")
-            
             self.random_sleep(10, 15)
+            # Descarta modales de permisos/onboarding post-login
+            self._dismiss_tiktok_modals()
 
-            perfil_xpath = '//*[@text="Perfil"]'
-            perfil_fallback_xpath = '//*[@content-desc="Perfil"]'
-            if not (self.click_element(perfil_xpath) or self.click_element(perfil_fallback_xpath) or self.click_element('//*[contains(@content-desc, "Profile")]')):
+            # 1. Click en Perfil (resource-id o content-desc)
+            perfil_rid = 'com.zhiliaoapp.musically:id/lfl'
+            if not (
+                self.device(resourceId=perfil_rid).exists and self.device(resourceId=perfil_rid).click()
+                or self.click_element('//*[@content-desc="Perfil"]')
+            ):
                 print(f"[TT][{self.device_id}] No se encontró el botón 'Perfil'")
                 return False
-            
             self.random_sleep(5, 10)
 
-            menu_perfil_xpath = '//*[@content-desc="Menú del perfil"]'
-            if not (self.click_element(menu_perfil_xpath) or self.click_element('//*[@content-desc="Profile menu"]')):
-                print(f"[TT][{self.device_id}] No se encontró el botón de menú del perfil")
+            # 2. Click en Menú del perfil
+            if not self.click_element('//*[@content-desc="Menú del perfil"]'):
+                print(f"[TT][{self.device_id}] No se encontró 'Menú del perfil'")
                 return False
-            
             self.random_sleep(5, 10)
-            
-            settings_and_privacy_xpath = '//*[@text="Settings and privacy"]'
-            ajustes_y_privacidad_xpath = '//*[@text="Ajustes y privacidad"]'
-            if not (self.click_element(settings_and_privacy_xpath) or self.click_element(ajustes_y_privacidad_xpath)):
-                print(f"[TT][{self.device_id}] No se encontró 'Settings and privacy' / 'Ajustes y privacidad'")
+
+            # 3. Click en Ajustes y privacidad (content-desc, no text)
+            if not (
+                self.click_element('//*[@content-desc="Ajustes y privacidad"]')
+                or self.click_element('//*[@text="Ajustes y privacidad"]')
+            ):
+                print(f"[TT][{self.device_id}] No se encontró 'Ajustes y privacidad'")
                 return False
-            
             self.random_sleep(5, 10)
-            
+
+            # 4. Scroll hasta "Cambiar de cuenta" (necesita hasta 10 scrolls)
             cambiar_cuenta_xpath = '//*[@text="Cambiar de cuenta"]'
-            switch_account_xpath = '//*[@text="Switch account"]'
-            if not (self.scroll_until_find(cambiar_cuenta_xpath, 5) or self.scroll_until_find(switch_account_xpath, 5)):  # Asegurar que el botón esté visible
-                print (f"[TT][{self.device_id}] No se pudo hacer scroll hasta 'Cambiar de cuenta' / 'Switch account'")
+            if not self.scroll_until_find(cambiar_cuenta_xpath, max_scrolls=10):
+                print(f"[TT][{self.device_id}] No se encontró 'Cambiar de cuenta' tras scroll")
                 return False
-            
-            self.random_sleep(5, 10)
-            
-            if not (self.click_element(cambiar_cuenta_xpath) or self.click_element(switch_account_xpath)):
-                print(f"[TT][{self.device_id}] No se encontró 'Cambiar de cuenta' / 'Switch account'")
-                return False
+            self.random_sleep(2, 4)
 
+            if not self.click_element(cambiar_cuenta_xpath):
+                print(f"[TT][{self.device_id}] No se pudo clickear 'Cambiar de cuenta'")
+                return False
             self.random_sleep(5, 10)
 
-            cuenta_button_template = (
-                "/hierarchy/android.widget.FrameLayout[1]/android.widget.LinearLayout[1]/android.widget.FrameLayout[1]/"
-                "android.widget.FrameLayout[1]/android.widget.FrameLayout[1]/android.widget.FrameLayout[1]/"
-                "android.view.ViewGroup[1]/android.widget.FrameLayout[1]/android.widget.FrameLayout[1]/"
-                "android.widget.RelativeLayout[1]/android.widget.FrameLayout[2]/"
-                "androidx.recyclerview.widget.RecyclerView[1]/android.widget.Button[{index}]"
-            )
-
-            def obtener_nombre_cuenta(xpath: str) -> Optional[str]:
-                try:
-                    if not self.element_exists(xpath):
-                        return None
-                    # El texto está en el TextView dentro del Button
-                    text_xpath = f"{xpath}/android.widget.LinearLayout[1]/android.widget.TextView[1]"
-                    if not self.element_exists(text_xpath):
-                        print(f"[TT][{self.device_id}] No se encontró el TextView en {text_xpath}")
-                        return None
-                    nombre = self.device.xpath(text_xpath).get_text()
-                    return (nombre or "").strip()
-                except Exception as e:
-                    print(f"[TT][{self.device_id}] No se pudo obtener el nombre de la cuenta en {xpath}: {e}")
-                    return None
-
-            def registrar_cuenta_actual():
-                actual_xpath = cuenta_button_template.format(index=1)
-                nombre = obtener_nombre_cuenta(actual_xpath)
-                if nombre and nombre not in self.cuentas_usadas:
-                    print(f"[TT][{self.device_id}] Registrando cuenta actual como usada: {nombre}")
-                    self.cuentas_usadas.append(nombre)
-
-            registrar_cuenta_actual()
+            # 5. Seleccionar una cuenta no usada
+            # Los botones de cuenta tienen resource-id j7i y content-desc = nombre de usuario
+            cuenta_rid = 'com.zhiliaoapp.musically:id/j7i'
+            if not self.device(resourceId=cuenta_rid).exists:
+                print(f"[TT][{self.device_id}] No se encontraron botones de cuenta")
+                return False
 
             cuenta_seleccionada = False
-            index = 1
-
-            while True:
-                button_xpath = cuenta_button_template.format(index=index)
-                if not self.element_exists(button_xpath):
+            for btn in self.device(resourceId=cuenta_rid):
+                nombre = (btn.info.get('contentDescription') or '').strip()
+                if not nombre:
+                    continue
+                # Saltar "Agregar cuenta"
+                if nombre.lower() in ['agregar cuenta', 'add account']:
+                    continue
+                if nombre not in self.cuentas_usadas:
+                    print(f"[TT][{self.device_id}] Cambiando a la cuenta: {nombre}")
+                    btn.click()
+                    self.cuentas_usadas.append(nombre)
+                    self.random_sleep(3, 5)
+                    cuenta_seleccionada = True
                     break
 
-                nombre_cuenta = obtener_nombre_cuenta(button_xpath)
-
-                if nombre_cuenta:
-                    # Filtrar botones que no son cuentas reales
-                    if nombre_cuenta.lower() in ["agregar cuenta", "add account"]:
-                        print(f"[TT][{self.device_id}] Omitiendo '{nombre_cuenta}' (no es una cuenta)")
-                        index += 1
-                        continue
-
-                    if nombre_cuenta not in self.cuentas_usadas:
-                        print(f"[TT][{self.device_id}] Cambiando a la cuenta: {nombre_cuenta}")
-                        if self.click_element(button_xpath):
-                            self.cuentas_usadas.append(nombre_cuenta)
-                            self.random_sleep(3, 5)
-                            cuenta_seleccionada = True
-                            break
-                        else:
-                            print(f"[TT][{self.device_id}] No se pudo seleccionar la cuenta {nombre_cuenta}")
-
-                index += 1
-
             if not cuenta_seleccionada:
-                print(f"[TT][{self.device_id}] No se encontraron cuentas disponibles sin usar en las visibles.")
+                print(f"[TT][{self.device_id}] Todas las cuentas ya fueron usadas")
                 return False
 
             print(f"[TT][{self.device_id}] Cambio de cuenta completado.")
@@ -630,6 +805,8 @@ class TiktokAutomator:
             self.random_sleep(5, 10)
             self.device.app_start("com.zhiliaoapp.musically")
             self.random_sleep(5, 10)
+            # Descarta modales de onboarding/permisos
+            self._dismiss_tiktok_modals()
             print(f"[TT][{self.device_id}] TikTok reiniciado.")
         except Exception as e:
             print(f"[TT][{self.device_id}] Error reiniciando TikTok: {e}")
@@ -639,112 +816,239 @@ class TiktokAutomator:
 ##############################################################
 
     def proceso_calentamiento(self, detener_flag: Optional[threading.Event] = None):
-        """Proceso de calentamiento en TikTok."""
+        """
+        Calentamiento de cuenta TikTok ultra-random.
+        Simula comportamiento humano real: FYP, Following, búsquedas,
+        likes, comentarios (solo leer), follows, favoritos, shares.
+        Sesiones variables, descansos aleatorios, rotación de cuentas.
+        """
         if not self._hay_cuentas_disponibles("calentamiento"):
             return
-        session_seconds = random.randint(5 * 60, 60 * 60)
-        break_seconds = random.randint(3 * 60, 60 * 60)
-    
+
+        session_seconds = random.randint(5 * 60, 45 * 60)
+        break_seconds = random.randint(5 * 60, 45 * 60)
+
+        # ── Selectores ──
         comment_button_xpath = '//*[contains(@content-desc,"comentario")]'
         close_comments_xpath = '//*[@content-desc="Cerrar"]'
         follow_button_xpath = '//*[contains(@content-desc,"Seguir")]'
         favorite_button_xpath = '//*[contains(@content-desc,"Favoritos")]'
         comment_like_xpath = '//*[contains(@content-desc,"Me gusta")]'
-    
-        def chance(percent: float) -> bool:
-            return random.random() * 100 < percent
-    
+        share_button_xpath = '//*[contains(@content-desc,"Compartir")]'
+        search_button_xpath = '//*[contains(@content-desc,"Buscar") or contains(@content-desc,"Search")]'
+        following_tab = '//*[@text="Siguiendo" or @text="Following"]'
+        fyp_tab = '//*[@text="Para ti" or @text="For You"]'
+
+        def chance(pct: float) -> bool:
+            return random.random() * 100 < pct
+
         def revisar_comentarios():
+            """Abre comentarios, hace scroll, likea algunos, cierra."""
             if not self.click_element(comment_button_xpath):
-                print(f"[TT][{self.device_id}] Botón de comentarios no encontrado")
                 return False
             self.random_sleep(2, 6)
-            loops = random.randint(1, 3)
+            loops = random.randint(1, 5)
             for _ in range(loops):
-                if self._should_stop(detener_flag, "calentamiento comentarios"):
+                if self._should_stop(detener_flag, "tt-warm-comments"):
                     break
                 try:
-                    self.device.swipe_ext("up", scale=0.8)
-                except Exception as swipe_err:
-                    print(f"[TT][{self.device_id}] Error haciendo scroll en comentarios: {swipe_err}")
-                self.random_sleep(1, 3)
-                if chance(30):
+                    self.device.swipe_ext("up", scale=random.uniform(0.5, 0.9))
+                except Exception:
+                    pass
+                self.random_sleep(1, 4)
+                # ~25% dar like a algún comentario
+                if chance(25):
                     self.click_element(comment_like_xpath)
                     self.short_sleep(0.5)
+                # ~10% scroll rápido (simula desinterés)
+                if chance(10):
+                    try:
+                        self.device.swipe_ext("up", scale=0.9)
+                    except Exception:
+                        pass
+                    self.short_sleep(0.5)
             if not self.click_element(close_comments_xpath):
-                print(f"[TT][{self.device_id}] No se pudo cerrar comentarios, usando BACK")
                 self.press_back()
             self.short_sleep(1)
             return True
-    
+
+        def _human_pause():
+            """Pausa de duración random (3-45s) simulando distracción."""
+            p = random.randint(3, 45)
+            print(f"[TT][{self.device_id}] Pausa humana {p}s...")
+            time.sleep(p)
+
         def seleccionar_accion() -> str:
+            """Distribución de acciones con pesos realistas."""
             roll = random.randint(1, 100)
-            if roll <= 60:
-                return "double_tap"
-            if roll <= 80:
-                return "like_and_comments"
-            if roll <= 90:
-                return "follow"
-            return "favorite"
-    
-        print(f"[TT][{self.device_id}] Iniciando calentamiento durante {session_seconds // 60} minutos aprox.")
+            if roll <= 50:       return "double_tap"
+            if roll <= 65:       return "like_and_comments"
+            if roll <= 72:       return "follow"
+            if roll <= 78:       return "favorite"
+            if roll <= 84:       return "share"
+            if roll <= 90:       return "pause"       # No hacer nada
+            if roll <= 95:       return "scroll_back"  # Volver a ver
+            return "fast_scroll"                      # Pasar rápido
+
+        def _go_to_following():
+            """Cambia a la pestaña 'Siguiendo'."""
+            if self.click_element(following_tab):
+                print(f"[TT][{self.device_id}] 📋 Cambiado a Following")
+                return True
+            return False
+
+        def _go_to_fyp():
+            """Vuelve a la pestaña 'Para ti'."""
+            if self.click_element(fyp_tab):
+                return True
+            return False
+
+        def _do_search():
+            """Hace una búsqueda random y scrollea resultados."""
+            if not self.click_element(search_button_xpath):
+                return
+            self.random_sleep(2, 4)
+            # Búsquedas genéricas para calentamiento
+            busquedas = [
+                "música", "comedia", "baile", "cocina", "deportes",
+                "viajes", "tecnología", "animales", "motivación", "tendencias",
+                "music", "comedy", "dance", "cooking", "sports",
+                "travel", "tech", "animals", "motivation", "trending",
+            ]
+            query = random.choice(busquedas)
+            try:
+                self.device.send_keys(query, clear=True)
+                self.short_sleep(1)
+                self.device.press("enter")
+            except Exception:
+                pass
+            self.random_sleep(3, 6)
+            # Scroll en resultados
+            for _ in range(random.randint(2, 6)):
+                try:
+                    self.device.swipe_ext("up", scale=random.uniform(0.3, 0.7))
+                except Exception:
+                    pass
+                time.sleep(random.uniform(1, 4))
+            self.press_back()
+            self.short_sleep(1)
+
+        print(f"[TT][{self.device_id}] 🔥 CALENTAMIENTO TT: {session_seconds // 60}min sesión, {break_seconds // 60}min descanso")
         session_end = time.time() + session_seconds
-    
+
         try:
             self._restart_tiktok_app()
-            
+
+            # Plan de actividades por bloques
+            videos_vistos = 0
+            in_following = False
+
             while time.time() < session_end:
-                if self._should_stop(detener_flag, "calentamiento FYP"):
+                if self._should_stop(detener_flag, "tt-warm-main"):
                     break
-                print(f"[TT][{self.device_id}] Viendo video en For You...")
-                self.random_sleep(2, 30)
-                accion = seleccionar_accion()
-                print(f"[TT][{self.device_id}] Acción seleccionada: {accion}")
-                
-                es_un_live_xpath = '//*[@text="Pulsa para ver el LIVE"]'
-                if not self.element_exists(es_un_live_xpath):
+
+                # ~15% cambiar entre FYP y Following
+                if chance(15):
+                    if in_following:
+                        _go_to_fyp()
+                        in_following = False
+                    else:
+                        if _go_to_following():
+                            in_following = True
+                    self.random_sleep(1, 3)
+
+                # ~10% hacer búsqueda (solo en FYP)
+                if chance(10) and not in_following:
+                    _do_search()
+                    self.random_sleep(2, 4)
+
+                # ~5% pausa larga (como si el usuario dejó el teléfono)
+                if chance(5):
+                    long_pause = random.randint(30, 120)
+                    print(f"[TT][{self.device_id}] Pausa larga {long_pause}s...")
+                    time.sleep(long_pause)
+
+                # Mirar video actual
+                watch_time = random.randint(2, 30)
+                es_live = self.element_exists('//*[@text="Pulsa para ver el LIVE"]')
+                if not es_live:
+                    print(f"[TT][{self.device_id}] Video {watch_time}s...")
+                    time.sleep(watch_time)
+
+                    accion = seleccionar_accion()
+                    print(f"[TT][{self.device_id}] Acción: {accion}")
+
                     if accion == "double_tap":
                         self.double_tap()
                     elif accion == "like_and_comments":
                         revisar_comentarios()
                         self.double_tap()
                     elif accion == "follow":
-                        if not self.click_element(follow_button_xpath):
-                            print(f"[TT][{self.device_id}] Botón de seguir no disponible.")
+                        self.click_element(follow_button_xpath)
                     elif accion == "favorite":
-                        if not self.click_element(favorite_button_xpath):
-                            print(f"[TT][{self.device_id}] Botón de guardar en favoritos no disponible.")
-                    if self._should_stop(detener_flag, "calentamiento scroll feed"):
-                        break
-                    self.random_sleep(2, 5)
+                        self.click_element(favorite_button_xpath)
+                    elif accion == "share":
+                        if self.click_element(share_button_xpath):
+                            self.random_sleep(2, 3)
+                            # ~50% repost, ~50% cancelar
+                            if chance(50):
+                                repost_xpath = '//*[@content-desc="Compartir"]'
+                                self.click_element(repost_xpath)
+                                self.short_sleep(1)
+                            else:
+                                self.press_back()
+                    elif accion == "pause":
+                        _human_pause()
+                    elif accion == "scroll_back":
+                        try:
+                            self.device.swipe_ext("down", scale=0.4)
+                        except Exception:
+                            pass
+                        time.sleep(3)
+                        self.double_tap()
+                    elif accion == "fast_scroll":
+                        pass  # Solo pasa rápido, sin interacción
+
+                    # Siguiente video
+                    try:
+                        self.device.swipe_ext("up", scale=random.uniform(0.6, 0.95))
+                    except Exception:
+                        pass
+                    self.random_sleep(1, 3)
+                    videos_vistos += 1
                 else:
-                    print(f"[TT][{self.device_id}] Video en LIVE detectado, omitiendo interacciones.")
-                try:
-                    self.device.swipe_ext("up", 0.9)
-                except Exception as feed_err:
-                    print(f"[TT][{self.device_id}] Error al pasar al siguiente video: {feed_err}")
+                    print(f"[TT][{self.device_id}] LIVE detectado — omitiendo")
+                    try:
+                        self.device.swipe_ext("up", 0.9)
+                    except Exception:
+                        pass
                     self.short_sleep(2)
-                self.random_sleep(1, 3)
-            print(f"[TT][{self.device_id}] Calentamiento finalizado o tiempo agotado.")
+
+                # Mini-descanso cada ~10 videos
+                if videos_vistos > 0 and videos_vistos % random.randint(8, 14) == 0:
+                    mini = random.randint(10, 60)
+                    print(f"[TT][{self.device_id}] Mini-descanso {mini}s...")
+                    time.sleep(mini)
+
+            print(f"[TT][{self.device_id}] Calentamiento finalizado ({videos_vistos} videos)")
+
         except Exception as e:
-            print(f"[TT][{self.device_id}] Error en proceso de calentamiento: {e}")
+            print(f"[TT][{self.device_id}] Error en calentamiento: {e}")
             raise
         finally:
             try:
                 self.device.app_stop("com.zhiliaoapp.musically")
-            except Exception as stop_err:
-                print(f"[TT][{self.device_id}] No se pudo cerrar TikTok correctamente: {stop_err}")
+            except Exception:
+                pass
             if not (detener_flag and detener_flag.is_set()):
-                print(f"[TT][{self.device_id}] Tomando descanso de {break_seconds // 60} minutos aprox.")
+                print(f"[TT][{self.device_id}] 😴 Descanso {break_seconds // 60}min...")
                 break_end = time.time() + break_seconds
                 while time.time() < break_end:
                     if detener_flag and detener_flag.is_set():
-                        print(f"[TT][{self.device_id}] Descanso interrumpido por solicitud de detención.")
                         break
                     time.sleep(min(30, break_end - time.time()))
-    
+
         self._post_proceso_rotacion("calentamiento", 5 * 60, 30 * 60, detener_flag)
-        # Cerrar TikTok si está abierto
         self.device.app_stop("com.zhiliaoapp.musically")
         self.random_sleep(2, 5)
     
@@ -768,10 +1072,9 @@ class TiktokAutomator:
             return 0
     
         publicados = 0
-        comment_section_xpath = '//*[contains(@content-desc,"comentarios")]'
-        add_comment_xpath = '//*[@text="Añadir comentario..."]'
-        add_comment_xpath_alt = '//*[@text="Agregar comentario…"]'
-        publish_comment_xpath = '//*[@content-desc="Publicar comentario"]'
+        # Resource-IDs reales (verificados con dump de UI)
+        comment_btn_rid = 'com.zhiliaoapp.musically:id/di5'   # Botón "Leer o agregar comentarios"
+        comment_input_rid = 'com.zhiliaoapp.musically:id/de5'  # EditText "Agregar comentario…"
     
         while comentarios_pendientes and self._hay_cuentas_disponibles("comentarios"):
             if self._should_stop(detener_flag, "comentarios"):
@@ -787,37 +1090,32 @@ class TiktokAutomator:
                 self.open_tiktok_link(link_post)
                 self.random_sleep(16, 60)
     
-                if not self.element_exists(comment_section_xpath):
+                # 1. Click en botón de comentarios
+                if not self.device(resourceId=comment_btn_rid).exists:
                     print(f"[TT][{self.device_id}] Botón de comentarios no encontrado")
                     break
-    
-                if not self.click_element(comment_section_xpath):
-                    print(f"[TT][{self.device_id}] No se pudo abrir la sección de comentarios")
-                    break
-    
+                self.device(resourceId=comment_btn_rid).click()
                 self.random_sleep(2, 4)
-
-                # Intentar hacer click en el campo de comentario (probar ambos XPath)
-                if not (self.click_element(add_comment_xpath) or self.click_element(add_comment_xpath_alt)):
-                    print(f"[TT][{self.device_id}] Campo 'Añadir comentario...' no disponible o no clickeable")
+    
+                # 2. Click en campo de texto
+                input_field = self.device(resourceId=comment_input_rid)
+                if not input_field.exists:
+                    print(f"[TT][{self.device_id}] Campo de comentario no encontrado")
                     break
-
-                self.random_sleep(2, 4)
-
-                # Escribir el comentario
+                input_field.click()
+                self.random_sleep(1, 2)
+    
+                # 3. Escribir y enviar con ENTER
                 self.device.send_keys(comentario_actual, clear=True)
                 self.short_sleep(1)
-
-                # Intentar publicar
-                if self.element_exists(publish_comment_xpath) and self.click_element(publish_comment_xpath):
-                    publicados += 1
-                    comentario_publicado = True
-                    comentarios_pendientes.popleft()
-                    print(f"[TT][{self.device_id}] Comentario publicado ({publicados} total)")
-                else:
-                    print(f"[TT][{self.device_id}] Botón de publicar no encontrado")
+                self.device.press("enter")
+                self.short_sleep(2)
     
-                self.device.set_fastinput_ime(False)
+                publicados += 1
+                comentario_publicado = True
+                comentarios_pendientes.popleft()
+                print(f"[TT][{self.device_id}] Comentario publicado ({publicados} total)")
+    
                 self.random_sleep(3, 6)
     
             except Exception as e:

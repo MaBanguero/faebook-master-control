@@ -564,11 +564,14 @@ class FacebookAutomator:
         if detener_flag and detener_flag.is_set():
             return False, indice_inicial + 1
 
-        # 2. COMENTARIO
-        print("\n--- PASO 2: COMENTARIO ---")
-        self.proceso_comentario_reels(link, texto_comentario, detener_flag)
-        time.sleep(3)
-        self.cerrar_facebook()
+        # 2. COMENTARIO (solo si hay texto)
+        if texto_comentario and texto_comentario.strip():
+            print("\n--- PASO 2: COMENTARIO ---")
+            self.proceso_comentario_reels(link, texto_comentario, detener_flag)
+            time.sleep(3)
+            self.cerrar_facebook()
+        else:
+            print("\n--- PASO 2: COMENTARIO (omitido - sin texto) ---")
 
         # 3. COMPARTIR
         print("\n--- PASO 3: COMPARTIR ---")
@@ -579,3 +582,331 @@ class FacebookAutomator:
         siguiente = indice_inicial + 1
         print(f"\n✅ [{self.device_id}] Flujo completo finalizado. Próxima cuenta: {siguiente}")
         return True, siguiente
+
+    # ═══════════════════════════════════════════════════════════════
+    # CALENTAMIENTO DE CUENTA (ultra-random)
+    # ═══════════════════════════════════════════════════════════════
+
+    def proceso_calentamiento(self, detener_flag=None, indice_inicial: int = 0):
+        """
+        Calentamiento de cuenta Facebook ultra-random.
+        Simula navegación humana real: scroll en feed, ver Reels,
+        reacciones aleatorias, leer comentarios, compartir esporádico.
+        Sesiones de duración variable con pausas. Rota cuentas entre sesiones.
+        """
+        import threading
+
+        def chance(pct: float) -> bool:
+            return random.random() * 100 < pct
+
+        def _scroll(direction="up", scale=None):
+            s = scale or random.uniform(0.3, 0.8)
+            try:
+                if direction == "up":
+                    self.device.swipe_ext("up", scale=s)
+                elif direction == "down":
+                    self.device.swipe_ext("down", scale=s)
+            except Exception:
+                # Fallback para versiones sin swipe_ext
+                w, h = self.device.window_size()
+                mid_x = w // 2
+                if direction == "up":
+                    self.device.swipe(mid_x, int(h * 0.7), mid_x, int(h * 0.3), duration=0.5)
+                elif direction == "down":
+                    self.device.swipe(mid_x, int(h * 0.3), mid_x, int(h * 0.7), duration=0.5)
+            time.sleep(random.uniform(0.5, 2.5))
+
+        def _go_to_feed():
+            """Va al feed principal desde cualquier pantalla."""
+            # Tab Inicio en bottom bar
+            inicio_xpaths = [
+                '//*[contains(@content-desc, "Inicio, pestaña") or contains(@content-desc, "Home, tab")]',
+                '//*[contains(@content-desc, "Inicio") or contains(@content-desc, "Home")]',
+            ]
+            for xp in inicio_xpaths:
+                if self.device.xpath(xp).exists:
+                    self.device.xpath(xp).click()
+                    time.sleep(2)
+                    return True
+
+            # Fallback: back repetido
+            for _ in range(4):
+                self.device.press("back")
+                time.sleep(1)
+            return True
+
+        def _go_to_reels():
+            """Va a la pestaña de Reels."""
+            reels_xpaths = [
+                '//*[contains(@content-desc, "Reels") or contains(@content-desc, "reels")]',
+                '//*[contains(@text, "Reels") or contains(@text, "reels")]',
+            ]
+            for xp in reels_xpaths:
+                if self.device.xpath(xp).exists:
+                    self.device.xpath(xp).click()
+                    time.sleep(3)
+                    return True
+            return False
+
+        def _try_react():
+            """Intenta una reacción aleatoria (like, love, care, etc.)."""
+            # La lupa de reacciones (long press en el botón Like)
+            like_xpaths = [
+                '//*[contains(@content-desc, "reacciones") or contains(@content-desc, "reactions")]',
+                '//*[contains(@content-desc, "Me gusta") or contains(@content-desc, "Like")]',
+            ]
+            for xp in like_xpaths:
+                if self.device.xpath(xp).exists:
+                    if chance(70):
+                        # Click simple = like
+                        self.device.xpath(xp).click()
+                        print(f"   👍 Reacción (like)")
+                    else:
+                        # Long press = menú de reacciones
+                        try:
+                            self.device.xpath(xp).long_click()
+                            time.sleep(2)
+                            # Seleccionar una reacción random del menú
+                            w, h = self.device.window_size()
+                            # Las reacciones aparecen arriba del botón
+                            reactions = [
+                                (int(w * 0.25), int(h * 0.55)),  # Love
+                                (int(w * 0.40), int(h * 0.50)),  # Care
+                                (int(w * 0.55), int(h * 0.55)),  # Haha
+                                (int(w * 0.70), int(h * 0.55)),  # Wow
+                            ]
+                            rx, ry = random.choice(reactions)
+                            self.device.click(rx, ry)
+                            print(f"   ❤️ Reacción especial")
+                        except Exception:
+                            self.device.xpath(xp).click()
+                    time.sleep(0.5)
+                    return True
+            return False
+
+        def _scroll_comments():
+            """Abre comentarios, hace scroll, sale."""
+            comment_xpaths = [
+                '//*[contains(@content-desc, "comentario") or contains(@content-desc, "comment")]',
+                '//*[contains(@text, "Comentar") or contains(@text, "Comment")]',
+            ]
+            for xp in comment_xpaths:
+                if self.device.xpath(xp).exists:
+                    self.device.xpath(xp).click()
+                    time.sleep(3)
+                    # Scroll en comentarios
+                    for _ in range(random.randint(1, 4)):
+                        _scroll("up", scale=0.7)
+                        time.sleep(random.uniform(0.5, 2))
+                    self.device.press("back")
+                    time.sleep(1)
+                    return True
+            return False
+
+        def _browse_feed(minutos=8):
+            """Navega el feed principal como un humano."""
+            print(f"[FB][{self.device_id}] 📰 Navegando Feed ~{minutos}min...")
+            self.device.app_stop("com.facebook.katana")
+            time.sleep(2)
+            self.device.app_start("com.facebook.katana")
+            time.sleep(8)
+            _go_to_feed()
+
+            deadline = time.time() + (minutos * 60)
+            posts_vistos = 0
+
+            while time.time() < deadline:
+                if detener_flag and detener_flag.is_set():
+                    break
+
+                roll = random.randint(1, 100)
+
+                if roll <= 65:
+                    # Scroll normal leyendo
+                    wait = random.randint(2, 12)
+                    time.sleep(wait)
+                    _scroll("up")
+                    posts_vistos += 1
+
+                elif roll <= 80:
+                    # Reaccionar al post actual
+                    _try_react()
+                    time.sleep(random.randint(1, 3))
+                    _scroll("up")
+
+                elif roll <= 90:
+                    # Abrir comentarios y leer
+                    _scroll_comments()
+                    _scroll("up")
+
+                elif roll <= 95:
+                    # Compartir (muy raro)
+                    print(f"[FB][{self.device_id}] 📤 Compartiendo...")
+                    share_xpaths = [
+                        '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share")]',
+                    ]
+                    for xp in share_xpaths:
+                        if self.device.xpath(xp).exists:
+                            self.device.xpath(xp).click()
+                            time.sleep(3)
+                            # Click en "Compartir ahora" si existe
+                            ahora_xp = '//*[contains(@text, "Compartir ahora") or contains(@text, "Share now")]'
+                            if self.device.xpath(ahora_xp).exists:
+                                self.device.xpath(ahora_xp).click()
+                                time.sleep(2)
+                            else:
+                                self.device.press("back")
+                            break
+                    _scroll("up")
+
+                elif roll <= 98:
+                    # Pausa humana (contenido interesante)
+                    pause = random.randint(8, 30)
+                    print(f"[FB][{self.device_id}] Pausa {pause}s...")
+                    time.sleep(pause)
+
+                else:
+                    # Scroll back (se arrepintió, volvió a ver)
+                    _scroll("down", scale=0.4)
+                    time.sleep(3)
+                    _try_react()
+
+                # Mini-descanso cada varios posts
+                if posts_vistos > 0 and posts_vistos % random.randint(8, 15) == 0:
+                    p = random.randint(10, 60)
+                    print(f"[FB][{self.device_id}] Mini-descanso {p}s...")
+                    time.sleep(p)
+
+                # ~15% abrir notificaciones y volver
+                if chance(15):
+                    notif_xpath = '//*[contains(@content-desc, "Notificaciones") or contains(@content-desc, "Notifications")]'
+                    if self.device.xpath(notif_xpath).exists:
+                        self.device.xpath(notif_xpath).click()
+                        time.sleep(random.randint(3, 8))
+                        self.device.press("back")
+                        time.sleep(2)
+
+            return posts_vistos
+
+        def _browse_reels(minutos=8):
+            """Navega Reels de Facebook."""
+            print(f"[FB][{self.device_id}] 🎬 Navegando Reels ~{minutos}min...")
+            if not _go_to_reels():
+                print(f"[FB][{self.device_id}] Reels tab no encontrada, siguiendo en feed")
+                return
+
+            time.sleep(3)
+            deadline = time.time() + (minutos * 60)
+            reels_vistos = 0
+
+            while time.time() < deadline:
+                if detener_flag and detener_flag.is_set():
+                    break
+
+                # Mirar reel actual
+                watch = random.randint(3, 30)
+                time.sleep(watch)
+
+                # ~30% reaccionar
+                if chance(30):
+                    _try_react()
+
+                # ~15% ver comentarios
+                if chance(15):
+                    _scroll_comments()
+
+                # Siguiente reel
+                try:
+                    self.device.swipe_ext("up", scale=0.9)
+                except Exception:
+                    w, h = self.device.window_size()
+                    self.device.swipe(w // 2, int(h * 0.7), w // 2, int(h * 0.3))
+                time.sleep(random.uniform(1, 3))
+                reels_vistos += 1
+
+                if reels_vistos % random.randint(8, 15) == 0:
+                    p = random.randint(15, 45)
+                    print(f"[FB][{self.device_id}] Pausa entre reels {p}s...")
+                    time.sleep(p)
+
+            return reels_vistos
+
+        # ── FLUJO PRINCIPAL ──
+        session_seconds = random.randint(5 * 60, 40 * 60)
+        break_seconds = random.randint(5 * 60, 50 * 60)
+
+        print(f"[FB][{self.device_id}] 🔥 CALENTAMIENTO FB: {session_seconds // 60}min sesión, {break_seconds // 60}min descanso")
+        print(f"[FB][{self.device_id}] Cuenta inicial: índice {indice_inicial}")
+
+        # Rotar a la cuenta inicial
+        self.rotar_perfil_secuencial(indice_inicial, detener_flag)
+
+        try:
+            # Armar plan de actividades random para esta sesión
+            actividades = []
+
+            # Siempre feed como base
+            actividades.append(("feed", random.randint(3, 12)))
+
+            # ~65% agregar Reels
+            if chance(65):
+                actividades.append(("reels", random.randint(2, 8)))
+
+            # ~20% volver al feed después de reels
+            if chance(20):
+                actividades.append(("feed", random.randint(2, 6)))
+
+            # ~30% revisar notificaciones
+            if chance(30):
+                actividades.append(("notifications", 0))
+
+            random.shuffle(actividades)
+            print(f"[FB][{self.device_id}] Plan: {[f'{a}({m}m)' for a, m in actividades]}")
+
+            session_end = time.time() + session_seconds
+            for actividad, minutos in actividades:
+                if time.time() >= session_end:
+                    break
+                if detener_flag and detener_flag.is_set():
+                    break
+
+                remaining = max(1, int((session_end - time.time()) / 60))
+
+                if actividad == "feed":
+                    duracion = min(minutos, remaining)
+                    if duracion > 0:
+                        _browse_feed(duracion)
+                elif actividad == "reels":
+                    duracion = min(minutos, remaining)
+                    if duracion > 0:
+                        _browse_reels(duracion)
+                elif actividad == "notifications":
+                    notif_xp = '//*[contains(@content-desc, "Notificaciones") or contains(@content-desc, "Notifications")]'
+                    if self.device.xpath(notif_xp).exists:
+                        self.device.xpath(notif_xp).click()
+                        time.sleep(random.randint(5, 15))
+                        for _ in range(random.randint(1, 3)):
+                            _scroll("up")
+                        self.device.press("back")
+                        time.sleep(2)
+
+            print(f"[FB][{self.device_id}] ✅ Calentamiento FB completado")
+
+        except Exception as e:
+            print(f"[FB][{self.device_id}] ❌ Error calentamiento FB: {e}")
+            raise
+        finally:
+            self.cerrar_facebook()
+
+            # Descanso
+            if not (detener_flag and detener_flag.is_set()):
+                print(f"[FB][{self.device_id}] 😴 Descanso {break_seconds // 60}min...")
+                break_end = time.time() + break_seconds
+                while time.time() < break_end:
+                    if detener_flag and detener_flag.is_set():
+                        break
+                    time.sleep(min(30, break_end - time.time()))
+
+        siguiente = indice_inicial + 1
+        print(f"[FB][{self.device_id}] Próxima cuenta: índice {siguiente}")
+        return siguiente

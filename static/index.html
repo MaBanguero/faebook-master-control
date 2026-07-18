@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FaeBook Master Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 300: '#a5b4fc',
+              400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca',
+              800: '#3730a3', 900: '#312e81', 950: '#1e1b4b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body { background: #0f172a; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
+    .card-hover:hover { border-color: #6366f1; transition: border-color 0.2s; }
+    .btn-primary { background: #6366f1; color: white; border-radius: 8px; padding: 8px 16px; font-weight: 500; transition: all 0.2s; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-danger { background: #dc2626; color: white; border-radius: 8px; padding: 8px 16px; font-weight: 500; transition: all 0.2s; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-ghost { background: transparent; color: #94a3b8; border-radius: 8px; padding: 8px 16px; font-weight: 500; transition: all 0.2s; }
+    .btn-ghost:hover { background: #334155; color: #e2e8f0; }
+    .input { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; color: #e2e8f0; width: 100%; transition: border-color 0.2s; }
+    .input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+    .input::placeholder { color: #475569; }
+    textarea.input { resize: vertical; min-height: 80px; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .badge-green { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .badge-yellow { background: rgba(234,179,8,0.15); color: #eab308; }
+    .badge-red { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .badge-blue { background: rgba(99,102,241,0.15); color: #818cf8; }
+    .badge-gray { background: rgba(148,163,184,0.1); color: #64748b; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; color: #94a3b8; font-weight: 500; transition: all 0.15s; cursor: pointer; }
+    .nav-item:hover { background: #1e293b; color: #e2e8f0; }
+    .nav-item.active { background: rgba(99,102,241,0.12); color: #818cf8; }
+    .toast { position: fixed; top: 20px; right: 20px; z-index: 9999; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .progress-bar { height: 4px; background: #334155; border-radius: 2px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #6366f1, #818cf8); border-radius: 2px; transition: width 0.5s ease; }
+    .tab { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; color: #64748b; }
+    .tab:hover { color: #e2e8f0; background: #1e293b; }
+    .tab.active { background: #6366f1; color: white; }
+    .checkbox-group label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; transition: background 0.15s; }
+    .checkbox-group label:hover { background: #1e293b; }
+    .checkbox-group input[type="checkbox"] { accent-color: #6366f1; width: 16px; height: 16px; }
+    .spinner { width: 18px; height: 18px; border: 2px solid #334155; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="text-slate-200 min-h-screen flex">
+  <!-- Sidebar -->
+  <aside class="w-60 bg-[#0b1120] border-r border-slate-800 flex flex-col shrink-0">
+    <div class="p-5 border-b border-slate-800">
+      <h1 class="text-lg font-bold tracking-tight">
+        <span class="text-brand-400">Fae</span><span class="text-white">Book</span>
+      </h1>
+      <p class="text-xs text-slate-500 mt-1">Master Control Panel</p>
+    </div>
+    <nav class="flex-1 p-3 space-y-1" id="sidebar-nav">
+      <div class="nav-item active" data-page="dashboard">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" data-page="facebook">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+        Facebook
+      </div>
+      <div class="nav-item" data-page="tiktok">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>
+        TikTok
+      </div>
+      <div class="nav-item" data-page="instagram">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678c-3.405 0-6.162 2.76-6.162 6.162 0 3.405 2.76 6.162 6.162 6.162 3.405 0 6.162-2.76 6.162-6.162 0-3.405-2.76-6.162-6.162-6.162zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/></svg>
+        Instagram
+      </div>
+    </nav>
+    <div class="p-3 border-t border-slate-800" id="server-status">
+      <div class="flex items-center gap-2 px-3 py-2 text-xs text-slate-500">
+        <span class="w-2 h-2 rounded-full bg-slate-600" id="status-dot"></span>
+        <span id="status-text">Conectando...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="flex-1 overflow-auto p-6" id="main-content">
+    <!-- Rendered dynamically -->
+  </main>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <script>
+    const API = 'http://localhost:8001';
+    let currentPage = 'dashboard';
+    let devices = [];
+    let tasks = [];
+    let pollInterval = null;
+
+    // ── Navigation ──
+    document.getElementById('sidebar-nav').addEventListener('click', e => {
+      const item = e.target.closest('.nav-item');
+      if (!item) return;
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      item.classList.add('active');
+      currentPage = item.dataset.page;
+      renderPage();
+      if (currentPage === 'dashboard') startPolling(); else stopPolling();
+    });
+
+    // ── Toast ──
+    function toast(msg, type = 'info') {
+      const colors = { success: 'bg-green-900 border-green-700 text-green-200', error: 'bg-red-900 border-red-700 text-red-200', info: 'bg-brand-900 border-brand-700 text-brand-200' };
+      const el = document.createElement('div');
+      el.className = `toast ${colors[type]} px-4 py-3 rounded-lg border shadow-lg text-sm font-medium`;
+      el.textContent = msg;
+      document.getElementById('toast-container').appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 3500);
+    }
+
+    // ── API ──
+    async function api(path, opts = {}) {
+      try {
+        const res = await fetch(API + path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || res.statusText); }
+        return res.json();
+      } catch (err) {
+        if (err.message.includes('Failed to fetch')) { document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-red-500'; document.getElementById('status-text').textContent = 'Sin conexión'; }
+        throw err;
+      }
+    }
+
+    // ── Device Polling ──
+    async function fetchDevices() {
+      try {
+        devices = await api('/api/dispositivos');
+        document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-green-500';
+        document.getElementById('status-text').textContent = `${devices.length} dispositivos`;
+      } catch (e) { /* handled in api() */ }
+    }
+
+    async function fetchTasks() {
+      try { tasks = await api('/api/tareas'); } catch (e) { /* */ }
+    }
+
+    function startPolling() {
+      fetchDevices(); fetchTasks();
+      pollInterval = setInterval(() => { fetchDevices(); fetchTasks(); if (currentPage === 'dashboard') renderDashboard(); }, 3000);
+    }
+
+    function stopPolling() {
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    }
+
+    // ── Render ──
+    function renderPage() {
+      const main = document.getElementById('main-content');
+      stopPolling();
+      switch (currentPage) {
+        case 'dashboard': startPolling(); fetchDevices().then(() => fetchTasks().then(renderDashboard)); break;
+        case 'facebook': renderPlatform('facebook', 'fb'); break;
+        case 'tiktok': renderPlatform('tiktok', 'tt'); break;
+        case 'instagram': renderPlatform('instagram', 'ig'); break;
+      }
+    }
+
+    // ── Dashboard ──
+    function renderDashboard() {
+      const active = tasks.filter(t => ['iniciando','ejecutando','deteniendo'].includes(t.estado));
+      const completedToday = tasks.filter(t => t.estado === 'completada').length;
+      const inactivos = devices.filter(d => d.estado === 'inactivo').length;
+      const trabajando = devices.filter(d => ['en_tarea','trabajando'].includes(d.estado)).length;
+
+      document.getElementById('main-content').innerHTML = `
+        <div class="space-y-6">
+          <div>
+            <h2 class="text-xl font-semibold">Dashboard</h2>
+            <p class="text-sm text-slate-400 mt-1">Resumen del sistema de automatización</p>
+          </div>
+
+          <!-- Stats -->
+          <div class="grid grid-cols-4 gap-4">
+            <div class="card p-5"><p class="text-xs text-slate-400 uppercase tracking-wide">Dispositivos</p><p class="text-2xl font-bold mt-2">${devices.length}</p><p class="text-xs text-slate-500 mt-1">${inactivos} inactivos · ${trabajando} ocupados</p></div>
+            <div class="card p-5"><p class="text-xs text-slate-400 uppercase tracking-wide">Tareas Activas</p><p class="text-2xl font-bold mt-2">${active.length}</p><p class="text-xs text-slate-500 mt-1">en ejecución</p></div>
+            <div class="card p-5"><p class="text-xs text-slate-400 uppercase tracking-wide">Completadas</p><p class="text-2xl font-bold mt-2">${completedToday}</p><p class="text-xs text-slate-500 mt-1">total histórico</p></div>
+            <div class="card p-5"><p class="text-xs text-slate-400 uppercase tracking-wide">Plataformas</p><p class="text-2xl font-bold mt-2">3</p><p class="text-xs text-slate-500 mt-1">FB · TT · IG</p></div>
+          </div>
+
+          <!-- Device Grid -->
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold mb-4">Dispositivos</h3>
+            <div class="grid grid-cols-4 gap-3" id="device-grid">
+              ${devices.map(d => {
+                const colors = { inactivo: 'badge-gray', en_tarea: 'badge-yellow', trabajando: 'badge-blue', error: 'badge-red' };
+                return `<div class="card card-hover p-3">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="font-mono text-xs text-slate-400 truncate" title="${d.id}">${d.id.slice(0,16)}…</span>
+                    <span class="badge ${colors[d.estado] || 'badge-gray'}">${d.estado}</span>
+                  </div>
+                  <p class="text-xs text-slate-500">${d.nombre || 'Sin nombre'}</p>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>
+
+          <!-- Active Tasks -->
+          ${active.length > 0 ? `
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold mb-4">Tareas Activas</h3>
+            <div class="space-y-3">
+              ${active.map(t => {
+                const pct = t.metricas.total_esperado > 0 ? ((t.metricas.exitosos + t.metricas.fallidos) / t.metricas.total_esperado * 100).toFixed(0) : 0;
+                const typeLabels = { fb_flujo_multi_cuenta: 'FB Multi', tt_flujo_multi_cuenta: 'TT Multi', ig_flujo_multi_cuenta: 'IG Multi', fb_calentamiento: 'FB Warm', tt_calentamiento: 'TT Warm', ig_calentamiento: 'IG Warm', fb_likes: 'FB Likes', fb_comentarios: 'FB Com.', fb_compartir: 'FB Share', fb_flujo_completo: 'FB Full' };
+                return `<div class="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="text-sm font-medium">${typeLabels[t.tipo] || t.tipo}</span>
+                      <span class="badge ${t.estado === 'ejecutando' ? 'badge-blue' : 'badge-yellow'}">${t.estado}</span>
+                    </div>
+                    <div class="progress-bar mt-2"><div class="progress-fill" style="width:${pct}%"></div></div>
+                    <div class="flex justify-between text-xs text-slate-500 mt-1">
+                      <span>${t.metricas.exitosos} ok · ${t.metricas.fallidos} fail</span>
+                      <span>${pct}%</span>
+                    </div>
+                  </div>
+                  <button class="btn-ghost text-xs !text-red-400 !py-1" onclick="cancelTask('${t.id}')">Cancelar</button>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>` : ''}
+        </div>
+      `;
+    }
+
+    // ── Platform Page ──
+    function renderPlatform(name, prefix) {
+      const platforms = {
+        facebook: { name: 'Facebook', color: 'text-blue-400', gradient: 'from-blue-600 to-blue-800', icon: 'f' },
+        tiktok: { name: 'TikTok', color: 'text-pink-400', gradient: 'from-pink-600 to-rose-800', icon: '♪' },
+        instagram: { name: 'Instagram', color: 'text-purple-400', gradient: 'from-purple-600 to-pink-800', icon: '◎' },
+      };
+      const p = platforms[name];
+
+      // FB-specific extra actions
+      const fbExtras = name === 'facebook' ? `
+        <div class="card p-5">
+          <h4 class="text-sm font-semibold mb-4">Acciones Individuales</h4>
+          <div class="flex flex-wrap gap-2">
+            <button class="btn-primary text-sm" onclick="runAction('${name}','likes')">👍 Solo Likes</button>
+            <button class="btn-primary text-sm" onclick="runAction('${name}','comentarios')">💬 Solo Comentarios</button>
+            <button class="btn-primary text-sm" onclick="runAction('${name}','compartir')">📤 Solo Compartir</button>
+            <button class="btn-ghost text-sm" onclick="runAction('${name}','cambiar_cuentas')">🔄 Rotar Cuentas</button>
+          </div>
+        </div>
+      ` : '';
+
+      document.getElementById('main-content').innerHTML = `
+        <div class="space-y-6">
+          <div>
+            <h2 class="text-xl font-semibold ${p.color}">${p.name}</h2>
+            <p class="text-sm text-slate-400 mt-1">Automatización de interacciones</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-6">
+            <!-- Main Form -->
+            <div class="card p-6 space-y-4">
+              <h3 class="text-sm font-semibold">Flujo Multi-Cuenta</h3>
+
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">URL del Post/Reel</label>
+                <input type="text" class="input" id="${prefix}-link" placeholder="https://...">
+              </div>
+
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Comentario (1 por línea = 1 cuenta)</label>
+                <textarea class="input" id="${prefix}-comment" placeholder="🔥&#10;Qué buen contenido&#10;👏👏👏" rows="4"></textarea>
+                <p class="text-xs text-slate-500 mt-1">Vacío = solo like + compartir</p>
+              </div>
+
+              <!-- AI Comment Generator -->
+              <div class="pt-4 border-t border-slate-700">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="text-sm font-medium text-brand-400">🤖 Generar con IA</span>
+                  <span class="badge badge-blue">DeepSeek</span>
+                </div>
+                <div class="mb-2">
+                  <label class="text-xs text-slate-400 block mb-1">Tema del post</label>
+                  <input type="text" class="input !text-sm" id="${prefix}-ai-topic" placeholder="Ej: Nuevo iPhone 17, receta de tacos, viaje a Europa...">
+                </div>
+                <div class="flex gap-2 items-end">
+                  <div>
+                    <label class="text-xs text-slate-400 block mb-1">Cantidad</label>
+                    <input type="number" class="input !w-20 !text-sm" id="${prefix}-ai-count" value="5" min="1" max="30">
+                  </div>
+                  <button class="btn-ghost text-sm !border !border-brand-700 !text-brand-300 hover:!bg-brand-900/30 flex-1" 
+                    id="${prefix}-ai-btn" onclick="generateComments('${name}', '${prefix}')">
+                    ✨ Generar Comentarios
+                  </button>
+                </div>
+              </div>
+
+              ${name === 'facebook' ? `
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Cuentas a usar</label>
+                <input type="number" class="input" id="${prefix}-cuentas" value="0" min="0" style="width:100px">
+                <p class="text-xs text-slate-500 mt-1">0 = secuencial, N = aleatorias</p>
+              </div>` : ''}
+
+              <button class="btn-primary w-full py-3 font-semibold" id="${prefix}-run-btn" onclick="runFlow('${name}')">
+                🚀 Ejecutar Flujo Completo
+              </button>
+            </div>
+
+            <!-- Device Selection -->
+            <div class="card p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-semibold">Dispositivos</h3>
+                <button class="text-xs text-brand-400 hover:underline" onclick="selectAll('${prefix}')">Todos</button>
+              </div>
+              <div class="checkbox-group space-y-1 max-h-64 overflow-y-auto" id="${prefix}-devices">
+                <p class="text-sm text-slate-500">Cargando...</p>
+              </div>
+            </div>
+          </div>
+
+          ${fbExtras}
+
+          <!-- Calentamiento -->
+          <div class="card p-5">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="text-sm font-semibold">🔥 Calentamiento de Cuentas</h4>
+                <p class="text-xs text-slate-400 mt-1">Simula comportamiento humano (scroll, likes aleatorios, sin comentarios)</p>
+              </div>
+              <button class="btn-ghost text-sm !border !border-slate-700" onclick="runWarmup('${name}')">Iniciar Calentamiento</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Load devices into checkboxes
+      fetchDevices().then(() => {
+        const container = document.getElementById(`${prefix}-devices`);
+        if (!container) return;
+        container.innerHTML = devices.length === 0
+          ? '<p class="text-sm text-slate-500">No hay dispositivos conectados</p>'
+          : devices.map(d => `<label><input type="checkbox" value="${d.id}" ${d.estado === 'inactivo' ? '' : 'disabled'}><span class="text-sm">${d.id.slice(0,20)}… <span class="text-xs text-slate-500">(${d.estado})</span></span></label>`).join('');
+      });
+    }
+
+    // ── Actions ──
+    function getSelectedDevices(prefix) {
+      return [...document.querySelectorAll(`#${prefix}-devices input:checked:not(:disabled)`)].map(cb => cb.value);
+    }
+
+    function selectAll(prefix) {
+      document.querySelectorAll(`#${prefix}-devices input:not(:disabled)`).forEach(cb => cb.checked = true);
+    }
+
+    async function runFlow(platform) {
+      const prefix = { facebook: 'fb', tiktok: 'tt', instagram: 'ig' }[platform];
+      const link = document.getElementById(`${prefix}-link`).value.trim();
+      const commentRaw = document.getElementById(`${prefix}-comment`).value.trim();
+      const deviceIds = getSelectedDevices(prefix);
+      const btn = document.getElementById(`${prefix}-run-btn`);
+
+      if (!link) return toast('Ingresa la URL del post', 'error');
+      if (deviceIds.length === 0) return toast('Selecciona al menos un dispositivo', 'error');
+
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Ejecutando...';
+
+      const comments = commentRaw ? commentRaw.split('\n').filter(c => c.trim()) : [];
+
+      try {
+        let endpoint, body;
+        if (platform === 'facebook') {
+          const cuentas = parseInt(document.getElementById('fb-cuentas')?.value || '0');
+          body = { dispositivos_ids: deviceIds, link_post: link, comentario: comments.length > 0 ? comments : '', cuentas_a_usar: cuentas };
+          endpoint = '/api/facebook/flujo-multi-cuenta/ejecutar';
+        } else {
+          body = { dispositivos_ids: deviceIds, link_post: link, comentario: comments.length > 0 ? comments : '' };
+          endpoint = `/api/${platform}/flujo-multi-cuenta/ejecutar`;
+        }
+        const res = await api(endpoint, { method: 'POST', body: JSON.stringify(body) });
+        toast(`✅ Tarea ${res.tarea_id.slice(0,8)}… iniciada`, 'success');
+      } catch (e) {
+        toast(`❌ ${e.message}`, 'error');
+      } finally {
+        btn.disabled = false; btn.innerHTML = '🚀 Ejecutar Flujo Completo';
+      }
+    }
+
+    async function runAction(platform, action) {
+      const link = document.getElementById('fb-link')?.value.trim();
+      const commentRaw = document.getElementById('fb-comment')?.value.trim();
+      const deviceIds = getSelectedDevices('fb');
+
+      if (!link) return toast('Ingresa la URL del post', 'error');
+      if (deviceIds.length === 0) return toast('Selecciona al menos un dispositivo', 'error');
+
+      const endpoints = {
+        likes: { path: '/api/likes/facebook/ejecutar', body: d => ({ dispositivos_ids: d, link_post: link }) },
+        comentarios: { path: '/api/comentarios/facebook/ejecutar', body: d => ({ dispositivos_ids: d, link_post: link, comentario: commentRaw ? commentRaw.split('\n').filter(c => c.trim()) : [] }) },
+        compartir: { path: '/api/compartir/facebook/ejecutar', body: d => ({ dispositivos_ids: d, link_post: link }) },
+        cambiar_cuentas: { path: '/api/cuentas/facebook/cambiar', body: d => ({ dispositivos_ids: d }) },
+      };
+
+      const cfg = endpoints[action];
+      if (!cfg) return;
+
+      try {
+        const res = await api(cfg.path, { method: 'POST', body: JSON.stringify(cfg.body(deviceIds)) });
+        toast(`✅ ${action} iniciado`, 'success');
+      } catch (e) {
+        toast(`❌ ${e.message}`, 'error');
+      }
+    }
+
+    async function runWarmup(platform) {
+      const prefix = { facebook: 'fb', tiktok: 'tt', instagram: 'ig' }[platform];
+      const deviceIds = getSelectedDevices(prefix);
+      if (deviceIds.length === 0) return toast('Selecciona al menos un dispositivo', 'error');
+
+      try {
+        const res = await api(`/api/${platform}/calentamiento/ejecutar`, {
+          method: 'POST', body: JSON.stringify({ dispositivos_ids: deviceIds })
+        });
+        toast(`🔥 Calentamiento iniciado en ${deviceIds.length} dispositivo(s)`, 'success');
+      } catch (e) {
+        toast(`❌ ${e.message}`, 'error');
+      }
+    }
+
+    async function cancelTask(taskId) {
+      try {
+        await api(`/api/tareas/${taskId}`, { method: 'DELETE' });
+        toast('Tarea cancelada', 'info');
+        fetchTasks().then(renderDashboard);
+      } catch (e) {
+        toast(`❌ ${e.message}`, 'error');
+      }
+    }
+
+    // ── AI Comment Generation ──
+    async function generateComments(platform, prefix) {
+      const topic = document.getElementById(`${prefix}-ai-topic`).value.trim();
+      const count = parseInt(document.getElementById(`${prefix}-ai-count`).value) || 5;
+      const btn = document.getElementById(`${prefix}-ai-btn`);
+
+      if (!topic) return toast('Ingresa el tema del post', 'error');
+      if (count < 1 || count > 30) return toast('Cantidad debe ser entre 1 y 30', 'error');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Generando...';
+
+      try {
+        const res = await api('/api/comentarios/generar', {
+          method: 'POST',
+          body: JSON.stringify({ tema: topic, cantidad: count })
+        });
+
+        const textarea = document.getElementById(`${prefix}-comment`);
+        textarea.value = res.comentarios.join('\\n');
+        toast(`✅ ${res.comentarios.length} comentarios generados`, 'success');
+      } catch (e) {
+        toast(`❌ ${e.message}`, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '✨ Generar Comentarios';
+      }
+    }
+
+    // ── Init ──
+    startPolling();
+    fetchDevices().then(() => fetchTasks().then(renderDashboard));
+  </script>
+</body>
+</html>

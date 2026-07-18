@@ -179,3 +179,36 @@ async def ejecutar_flujo_multi_cuenta(request: dict):
         "tarea_id": tarea.id,
         "message": f"Iniciando flujo multi-cuenta (cuentas_a_usar={cuentas_a_usar})"
     }
+
+
+@router.post("/facebook/calentamiento/ejecutar")
+async def ejecutar_calentamiento_facebook(request: dict):
+    """
+    Ejecuta calentamiento ultra-random de cuentas Facebook.
+
+    Body:
+    {
+        "dispositivos_ids": ["98883833445a305730"]
+    }
+    """
+    dispositivos_ids = request.get("dispositivos_ids")
+    if not dispositivos_ids:
+        raise HTTPException(status_code=400, detail="Faltan dispositivos_ids")
+
+    tarea = await tareas_service.crear_tarea(
+        tipo="fb_calentamiento",
+        dispositivos_ids=dispositivos_ids,
+        config={},
+        total_esperado=len(dispositivos_ids),
+    )
+
+    facebook_service.ejecutar_calentamiento(
+        dispositivos_ids=dispositivos_ids,
+        tarea_id=tarea.id,
+    )
+
+    return {
+        "success": True,
+        "tarea_id": tarea.id,
+        "message": "Calentamiento Facebook iniciado",
+    }
