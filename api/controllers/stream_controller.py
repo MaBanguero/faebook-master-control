@@ -154,3 +154,10 @@ async def stream_status():
         "active": active is not None,
         "device": active,
     }
+
+
+@router.post("/stream/stop")
+async def stream_stop():
+    """Forzar detención del stream actual (para cambio de dispositivo)."""
+    stream_manager.stop()
+    return {"stopped": True}

@@ -806,8 +806,12 @@
       wrap.onpointerleave = () => { streamTouchStart = null; };
     }
 
-    function disconnectStream() {
+    async function disconnectStream() {
       if (streamReconnectTimer) { clearTimeout(streamReconnectTimer); streamReconnectTimer = null; }
+      // Forzar kill del pipeline en el servidor ANTES de cerrar WS
+      if (streamDevice) {
+        try { await fetch(API + '/api/stream/stop', { method: 'POST' }); } catch(e) {}
+      }
       if (streamWs) { streamWs.close(); streamWs = null; }
       streamDevice = null;
       mediaSource = null;
