@@ -34,6 +34,10 @@
     .btn-danger:hover { background: #b91c1c; }
     .btn-ghost { background: transparent; color: #94a3b8; border-radius: 8px; padding: 8px 16px; font-weight: 500; transition: all 0.2s; }
     .btn-ghost:hover { background: #334155; color: #e2e8f0; }
+    .conn-badge { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+    .conn-online { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .conn-offline { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .conn-unknown { background: rgba(148,163,184,0.1); color: #64748b; }
     .input { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; color: #e2e8f0; width: 100%; transition: border-color 0.2s; }
     .input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
     .input::placeholder { color: #475569; }
@@ -151,6 +155,7 @@
     let currentPage = 'dashboard';
     let devices = [];
     let tasks = [];
+    let connectivityData = {};
     let pollInterval = null;
 
     // ── Navigation ──
@@ -206,6 +211,25 @@
       try { tasks = await api('/api/tareas'); } catch (e) { /* */ }
     }
 
+    async function fetchConnectivity() {
+      try {
+        const data = await api('/api/conectividad/estado');
+        data.dispositivos.forEach(d => { connectivityData[d.adb_id] = d; });
+      } catch (e) { /* */ }
+    }
+
+    async function runConnectivityCheck() {
+      toast('🔍 Verificando conectividad en 38 dispositivos...', 'info');
+      try {
+        const data = await api('/api/conectividad/verificar', { method: 'POST', body: '{}' });
+        data.dispositivos.forEach(d => { connectivityData[d.adb_id] = d; });
+        toast(`✅ ${data.internet}/${data.total} con internet`, 'success');
+        if (currentPage === 'dashboard') renderDashboard();
+      } catch (e) {
+        toast(`❌ ${e.message}`, 'error');
+      }
+    }
+
     function startPolling() {
       fetchDevices(); fetchTasks();
       pollInterval = setInterval(() => { fetchDevices(); fetchTasks(); if (currentPage === 'dashboard') renderDashboard(); }, 10000);
@@ -245,11 +269,16 @@
           </div>
 
           <!-- Stats -->
-          <div class="grid grid-cols-4 gap-4">
+          <div class="grid grid-cols-5 gap-4">
             <div class="card p-5"><p class="text-xs text-slate-400 uppercase tracking-wide">Dispositivos</p><p class="text-2xl font-bold mt-2">${devices.length}</p><p class="text-xs text-slate-500 mt-1">${inactivos} inactivos · ${trabajando} ocupados</p></div>
             <div class="card p-5"><p class="text-xs text-slate-400 uppercase tracking-wide">Tareas Activas</p><p class="text-2xl font-bold mt-2">${active.length}</p><p class="text-xs text-slate-500 mt-1">en ejecución</p></div>
             <div class="card p-5"><p class="text-xs text-slate-400 uppercase tracking-wide">Completadas</p><p class="text-2xl font-bold mt-2">${completedToday}</p><p class="text-xs text-slate-500 mt-1">total histórico</p></div>
             <div class="card p-5"><p class="text-xs text-slate-400 uppercase tracking-wide">Plataformas</p><p class="text-2xl font-bold mt-2">3</p><p class="text-xs text-slate-500 mt-1">FB · TT · IG</p></div>
+            <div class="card p-5 cursor-pointer hover:border-brand-400" onclick="runConnectivityCheck()">
+              <p class="text-xs text-slate-400 uppercase tracking-wide">Internet 🌐</p>
+              <p class="text-2xl font-bold mt-2" id="conn-count">--</p>
+              <p class="text-xs text-slate-500 mt-1">click para verificar</p>
+            </div>
           </div>
 
           <!-- Device Grid -->
@@ -258,12 +287,19 @@
             <div class="grid grid-cols-4 gap-3" id="device-grid">
               ${devices.map(d => {
                 const colors = { inactivo: 'badge-gray', en_tarea: 'badge-yellow', trabajando: 'badge-blue', error: 'badge-red' };
+                const c = connectivityData[d.adb_id];
+                const connCls = c ? (c.internet ? 'conn-online' : 'conn-offline') : 'conn-unknown';
+                const connLabel = c ? (c.internet ? '🟢' : '🟡') : '⚪';
+                const speedInfo = c && c.link_speed ? ' · ' + c.link_speed : '';
                 return `<div class="card card-hover p-3">
                   <div class="flex items-center justify-between mb-2">
                     <span class="font-mono text-xs text-slate-400 truncate" title="${d.id}">${d.id.slice(0,16)}…</span>
                     <span class="badge ${colors[d.estado] || 'badge-gray'}">${d.estado}</span>
                   </div>
                   <p class="text-xs text-slate-500">${d.nombre || 'Sin nombre'}</p>
+                  <div class="flex items-center gap-1 mt-1">
+                    <span class="conn-badge ${connCls}">${connLabel}${speedInfo}</span>
+                  </div>
                 </div>`;
               }).join('')}
             </div>
