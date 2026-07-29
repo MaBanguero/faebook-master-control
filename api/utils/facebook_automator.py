@@ -459,6 +459,7 @@ class FacebookAutomator:
         """
         Navega al panel de cuentas y devuelve la lista de nombres de perfiles
         disponibles, sin cambiar de cuenta.
+        Soporta Facebook v460 (menú clásico) y v541+ (cuentas visibles).
 
         Returns:
             list[str]: nombres de cuentas disponibles, o lista vacía si falla.
@@ -482,22 +483,24 @@ class FacebookAutomator:
                 return []
             time.sleep(3)
 
-            # Cambiar perfil
+            # Intentar abrir el switcher de perfiles (solo v460 clásico)
             cambiar_xpaths = [
                 '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil")]',
                 '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
                 '//*[contains(@content-desc, "change profile") or contains(@content-desc, "change account")]',
+                '//*[contains(@content-desc, "See more") or contains(@text, "See more")]',
             ]
             for xp in cambiar_xpaths:
                 if self.device.xpath(xp).wait(timeout=2):
                     self.device.xpath(xp).click()
                     break
             else:
-                return []
+                # v541+: cuentas visibles directamente en el menú, sin sub-menú
+                xml = self.device.dump_hierarchy()
+                return self._parse_cuentas_xml(xml)
             time.sleep(3)
 
             # Expandir "Ver todo" si existe
-            lista_expandida = False
             ver_todo_xpaths = [
                 '//*[contains(@text, "Ver todo") or contains(@content-desc, "Ver todo")]',
                 '//*[contains(@text, "See all") or contains(@content-desc, "See all")]',
@@ -506,13 +509,10 @@ class FacebookAutomator:
                 if self.device.xpath(xp).wait(timeout=5):
                     self.device.xpath(xp).click()
                     time.sleep(2)
-                    lista_expandida = True
+                    for _ in range(3):
+                        self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
+                        time.sleep(1)
                     break
-
-            if lista_expandida:
-                for _ in range(3):
-                    self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
-                    time.sleep(1)
 
             # Parsear cuentas
             xml = self.device.dump_hierarchy()
@@ -538,6 +538,7 @@ class FacebookAutomator:
             'búsqueda', 'ícono', 'icono', 'search icon', 'barra de navegación', 'navigation bar',
             'feed', 'news feed', 'noticias', 'dark mode', 'modo oscuro',
             'log out', 'cerrar sesión', 'logout', 'report', 'reportar', 'denunciar',
+            'profile picture', 'profile switcher', 'dating',
         ]
 
         cuentas = []
@@ -547,10 +548,11 @@ class FacebookAutomator:
             clickable = el.attrib.get('clickable', 'false')
             label = txt or desc
 
-            if clickable == 'true' and label and label not in ('Cerrar', 'Close'):
+            if clickable == 'true' and label and label not in ('Cerrar', 'Close', 'Cancelar', 'Cancel'):
                 clean_label = label.split(',')[0].strip()
                 if not any(kw in clean_label.lower() for kw in skip_keywords):
-                    cuentas.append(clean_label)
+                    if clean_label not in cuentas:
+                        cuentas.append(clean_label)
         return cuentas
 
     def ejecutar_flujo_completo_fb(self, link: str, texto_comentario: str, detener_flag=None,
