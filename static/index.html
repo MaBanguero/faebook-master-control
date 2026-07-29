@@ -62,7 +62,7 @@
     .stream-full { display: flex; flex-direction: column; height: calc(100vh - 80px); }
     .stream-controls { flex-shrink: 0; display: flex; gap: 12px; align-items: center; padding: 10px 16px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; margin-bottom: 10px; }
     .stream-video-wrap { flex: 1; background: #0b1120; border: 1px solid #334155; border-radius: 12px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; touch-action: none; cursor: crosshair; }
-    .stream-video-wrap img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+    .stream-video-wrap video { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
     .stream-stats-bar { flex-shrink: 0; display: flex; gap: 16px; padding: 8px 16px; margin-top: 8px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; }
     .stream-stats-bar .stat-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
     .stream-stats-bar .stat-label { color: #64748b; }
@@ -579,6 +579,9 @@
     let streamReconnectTimer = null;
     let streamScreenW = 1080, streamScreenH = 1920;
     let streamTouchStart = null;
+    let mediaSource = null;
+    let sourceBuffer = null;
+    let pendingFragments = [];
 
     function startStreamingPolling() {
       fetchDevices();
@@ -620,7 +623,7 @@
               <p class="text-base">Selecciona un dispositivo</p>
               <p class="text-sm mt-1 opacity-70">La transmisión iniciará en ~15 segundos</p>
             </div>
-            <img id="stream-img" style="display:none" alt="Pantalla del dispositivo" />
+            <video id="stream-video" style="display:none;width:100%;height:100%;object-fit:contain" autoplay muted playsinline></video>
             <div id="stream-status-badge" class="absolute top-3 left-3 text-xs px-3 py-1 rounded-full bg-black/70 backdrop-blur font-medium" style="display:none"></div>
           </div>
 
@@ -679,32 +682,56 @@
       setStreamStatus('Conectando...', 'badge-yellow');
       streamWs = new WebSocket(url);
 
+      // Setup MediaSource
+      const video = document.getElementById('stream-video');
+      mediaSource = new MediaSource();
+      video.src = URL.createObjectURL(mediaSource);
+      pendingFragments = [];
+
+      mediaSource.addEventListener('sourceopen', () => {
+        sourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+        sourceBuffer.mode = 'sequence';
+        sourceBuffer.addEventListener('updateend', () => {
+          if (pendingFragments.length > 0) {
+            try { sourceBuffer.appendBuffer(pendingFragments.shift()); } catch(e) {}
+          }
+        });
+        // Flush pending
+        while (pendingFragments.length > 0 && !sourceBuffer.updating) {
+          try { sourceBuffer.appendBuffer(pendingFragments.shift()); } catch(e) { break; }
+        }
+      });
+
       streamWs.onopen = () => {
-        setStreamStatus('En vivo', 'badge-green');
-        document.getElementById('stream-img').style.display = 'block';
-        document.getElementById('stream-placeholder').style.display = 'none';
-        setupStreamTouch();
+        setStreamStatus('Conectando...', 'badge-yellow');
       };
 
       streamWs.onmessage = (evt) => {
-        // Si es string → JSON (screen_info u otros)
+        // JSON messages
         if (typeof evt.data === 'string') {
           try {
             const msg = JSON.parse(evt.data);
             if (msg.type === 'screen_info') {
               streamScreenW = msg.width;
               streamScreenH = msg.height;
+            } else if (msg.type === 'init') {
+              // Append init segment to MediaSource
+              const initBytes = Uint8Array.from(atob(msg.data), c => c.charCodeAt(0));
+              appendBuffer(initBytes.buffer);
+              video.style.display = 'block';
+              document.getElementById('stream-placeholder').style.display = 'none';
+              setStreamStatus('En vivo', 'badge-green');
+              setupStreamTouch();
+              video.play().catch(() => {});
             }
           } catch(e) {}
           return;
         }
-        // Binary → frame JPEG
-        const blob = new Blob([evt.data], { type: 'image/jpeg' });
-        const img = document.getElementById('stream-img');
-        const oldUrl = img.src;
-        img.src = URL.createObjectURL(blob);
-        if (oldUrl && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
-        setStreamStatus('En vivo', 'badge-green');
+        // Binary → media fragment
+        evt.data.arrayBuffer().then(buf => {
+          appendBuffer(buf);
+          setStreamStatus('En vivo', 'badge-green');
+        });
       };
 
       streamWs.onclose = () => {
@@ -715,6 +742,14 @@
       };
 
       streamWs.onerror = () => setStreamStatus('Error', 'badge-red');
+    }
+
+    function appendBuffer(buf) {
+      if (!sourceBuffer) { pendingFragments.push(buf); return; }
+      if (sourceBuffer.updating) { pendingFragments.push(buf); return; }
+      try { sourceBuffer.appendBuffer(buf); } catch(e) {
+        pendingFragments.push(buf);
+      }
     }
 
     function sendCmd(type, value) {
@@ -775,12 +810,15 @@
       if (streamReconnectTimer) { clearTimeout(streamReconnectTimer); streamReconnectTimer = null; }
       if (streamWs) { streamWs.close(); streamWs = null; }
       streamDevice = null;
-      const img = document.getElementById('stream-img');
+      mediaSource = null;
+      sourceBuffer = null;
+      pendingFragments = [];
+      const video = document.getElementById('stream-video');
       const ph = document.getElementById('stream-placeholder');
       const badge = document.getElementById('stream-status-badge');
       const stopBtn = document.getElementById('stream-stop-btn');
       const info = document.getElementById('stream-active-info');
-      if (img) img.style.display = 'none';
+      if (video) { video.style.display = 'none'; video.src = ''; video.load(); }
       if (ph) ph.style.display = '';
       if (badge) badge.style.display = 'none';
       if (stopBtn) stopBtn.style.display = 'none';

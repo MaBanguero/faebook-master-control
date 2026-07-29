@@ -7,6 +7,7 @@ import os
 import asyncio
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -202,17 +203,54 @@ class StreamManager:
 
 
 class FrameReader:
-    """Lee frames JPEG del stdout de ffmpeg."""
+    """Lee fragmentos fMP4 del stdout de ffmpeg (H.264, MediaSource-ready)."""
 
-    JPEG_SOI = b"\xff\xd8"
-    JPEG_EOI = b"\xff\xd9"
+    FRAGMENT_START = b"styp"
 
     def __init__(self, device_id: str):
         self.device_id = device_id
         self._buf = b""
+        self._init_sent = False
+        self._init_data: Optional[bytes] = None
 
-    async def read_frame(self) -> Optional[bytes]:
-        """Lee un frame JPEG completo. Retorna None si el stream murió."""
+    async def read_init(self) -> Optional[bytes]:
+        """Retorna el init segment (ftyp + moov) la primera vez."""
+        if self._init_data is not None:
+            return self._init_data if not self._init_sent else None
+
+        mgr = StreamManager()
+        proc = mgr._ffmpeg_proc
+        if proc is None or proc.poll() is not None or proc.stdout is None:
+            return None
+
+        stdout = proc.stdout
+        loop = asyncio.get_event_loop()
+        start = time.time()
+
+        # Leer hasta encontrar moov
+        while time.time() - start < 15:
+            moov = self._buf.find(b"moov")
+            if moov >= 0 and self._buf[:4] == b"\x00\x00\x00":
+                # Init segment: todo hasta después de moov
+                end = moov + self._int32_at(self._buf, moov - 4)
+                if end <= len(self._buf):
+                    self._init_data = self._buf[:end]
+                    self._buf = self._buf[end:]
+                    self._init_sent = True
+                    return self._init_data
+
+            try:
+                chunk = await loop.run_in_executor(None, stdout.read, 65536)
+                if not chunk:
+                    return None
+                self._buf += chunk
+            except Exception:
+                return None
+
+        return self._buf[:4096] if self._buf else None  # fallback
+
+    async def read_fragment(self) -> Optional[bytes]:
+        """Retorna un fragmento de media (styp + moof + mdat)."""
         mgr = StreamManager()
         proc = mgr._ffmpeg_proc
         if proc is None or proc.poll() is not None or proc.stdout is None:
@@ -222,23 +260,36 @@ class FrameReader:
         loop = asyncio.get_event_loop()
 
         while True:
-            # Buscar un JPEG completo en el buffer
-            soi = self._buf.find(self.JPEG_SOI)
-            eoi = self._buf.find(self.JPEG_EOI, soi + 2) if soi >= 0 else -1
+            # Buscar styp (start of fragment)
+            idx = self._buf.find(self.FRAGMENT_START)
+            if idx >= 0:
+                # El fragmento empieza en el box size antes de styp
+                if idx >= 4:
+                    size = self._int32_at(self._buf, idx - 4)
+                    end = idx - 4 + size
+                    if end <= len(self._buf):
+                        fragment = self._buf[idx - 4 : end]
+                        self._buf = self._buf[end:]
+                        return fragment
+                    # Datos insuficientes: leer más
+                else:
+                    # styp al inicio sin size box → extraño, saltar
+                    self._buf = self._buf[idx + 4:]
+                    continue
 
-            if soi >= 0 and eoi > soi:
-                frame = self._buf[soi : eoi + 2]
-                self._buf = self._buf[eoi + 2 :]
-                return frame
-
-            # Leer más datos
             try:
-                chunk = await loop.run_in_executor(None, stdout.read, 32768)
+                chunk = await loop.run_in_executor(None, stdout.read, 65536)
                 if not chunk:
                     return None
                 self._buf += chunk
             except Exception:
                 return None
+
+    @staticmethod
+    def _int32_at(data: bytes, offset: int) -> int:
+        if offset + 4 > len(data):
+            return 999999
+        return int.from_bytes(data[offset:offset + 4], "big")
 
 
 # Singleton helper
