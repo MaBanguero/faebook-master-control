@@ -660,8 +660,8 @@
       fetchDevices().then(populateStreamDeviceSelect);
     }
 
-    function onStreamDeviceChange(deviceId) {
-      disconnectStream();
+    async function onStreamDeviceChange(deviceId) {
+      await disconnectStream();
       if (!deviceId) {
         clearStreamStats();
         return;
@@ -675,7 +675,6 @@
     }
 
     function connectStream(deviceId) {
-      disconnectStream();
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       const url = `${proto}://${location.host}/api/ws/stream/${deviceId}`;
 
