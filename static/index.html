@@ -577,6 +577,8 @@
     let streamDevice = null;
     let streamStatsInterval = null;
     let streamReconnectTimer = null;
+    let streamScreenW = 1080, streamScreenH = 1920;
+    let streamTouchStart = null;
 
     function startStreamingPolling() {
       fetchDevices();
@@ -594,13 +596,18 @@
       document.getElementById('main-content').className = 'no-padding';
       document.getElementById('main-content').innerHTML = `
         <div class="stream-full">
-          <!-- Barra superior: título + selector + botones -->
+          <!-- Barra superior: título + selector + controles -->
           <div class="stream-controls">
             <h2 class="text-base font-semibold text-brand-400 whitespace-nowrap mr-2">📡 Streaming</h2>
             <select id="stream-device-select" class="select-sm" onchange="onStreamDeviceChange(this.value)">
               <option value="">-- Seleccionar dispositivo --</option>
             </select>
             <span id="stream-active-info" class="text-xs"></span>
+            <button class="btn-ghost text-xs !px-2" onclick="sendCmd('home')" title="Home">🏠</button>
+            <button class="btn-ghost text-xs !px-2" onclick="sendCmd('back')" title="Atrás">⬅</button>
+            <button class="btn-ghost text-xs !px-2" onclick="sendCmd('recents')" title="Recientes">📱</button>
+            <input type="text" id="stream-text-input" class="select-sm !min-w-0 !flex-1" placeholder="Escribir texto..."
+              onkeydown="if(event.key==='Enter'){sendCmd('text',document.getElementById('stream-text-input').value);this.value=''}">
             <div class="flex-1"></div>
             <button class="btn-ghost text-xs" onclick="refreshStreamDevices()">🔄</button>
             <button class="btn-danger text-xs !py-1" onclick="disconnectStream()" id="stream-stop-btn" style="display:none">⏹ Detener</button>
@@ -671,15 +678,27 @@
 
       setStreamStatus('Conectando...', 'badge-yellow');
       streamWs = new WebSocket(url);
-      streamWs.binaryType = 'arraybuffer';
 
       streamWs.onopen = () => {
         setStreamStatus('En vivo', 'badge-green');
         document.getElementById('stream-img').style.display = 'block';
         document.getElementById('stream-placeholder').style.display = 'none';
+        setupStreamTouch();
       };
 
       streamWs.onmessage = (evt) => {
+        // Si es string → JSON (screen_info u otros)
+        if (typeof evt.data === 'string') {
+          try {
+            const msg = JSON.parse(evt.data);
+            if (msg.type === 'screen_info') {
+              streamScreenW = msg.width;
+              streamScreenH = msg.height;
+            }
+          } catch(e) {}
+          return;
+        }
+        // Binary → frame JPEG
         const blob = new Blob([evt.data], { type: 'image/jpeg' });
         const img = document.getElementById('stream-img');
         const oldUrl = img.src;
@@ -696,6 +715,59 @@
       };
 
       streamWs.onerror = () => setStreamStatus('Error', 'badge-red');
+    }
+
+    function sendCmd(type, value) {
+      if (!streamWs || streamWs.readyState !== WebSocket.OPEN) return;
+      const cmd = { type: type };
+      if (type === 'text') cmd.text = value || '';
+      streamWs.send(JSON.stringify(cmd));
+    }
+
+    function setupStreamTouch() {
+      const wrap = document.querySelector('.stream-video-wrap');
+      if (!wrap) return;
+
+      const getCoords = (e) => {
+        const rect = wrap.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const bx = clientX - rect.left;
+        const by = clientY - rect.top;
+        return { bx, by, vw: rect.width, vh: rect.height };
+      };
+
+      const mapCoords = (bx, by, vw, vh) => ({
+        x: Math.round(bx / vw * streamScreenW),
+        y: Math.round(by / vh * streamScreenH)
+      });
+
+      wrap.onpointerdown = (e) => {
+        const c = getCoords(e);
+        streamTouchStart = { ...mapCoords(c.bx, c.by, c.vw, c.vh), time: Date.now() };
+      };
+
+      wrap.onpointerup = (e) => {
+        if (!streamTouchStart) return;
+        const c = getCoords(e);
+        const end = mapCoords(c.bx, c.by, c.vw, c.vh);
+        const dx = end.x - streamTouchStart.x;
+        const dy = end.y - streamTouchStart.y;
+        const dt = Date.now() - streamTouchStart.time;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist < 20 && dt < 500) {
+          streamWs.send(JSON.stringify({ type: 'tap', x: end.x, y: end.y }));
+        } else if (dist >= 20) {
+          streamWs.send(JSON.stringify({
+            type: 'swipe', x1: streamTouchStart.x, y1: streamTouchStart.y,
+            x2: end.x, y2: end.y, duration: Math.min(dt, 1000)
+          }));
+        }
+        streamTouchStart = null;
+      };
+
+      wrap.onpointerleave = () => { streamTouchStart = null; };
     }
 
     function disconnectStream() {
