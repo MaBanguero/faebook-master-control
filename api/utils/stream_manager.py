@@ -169,7 +169,8 @@ class StreamManager:
 
     def _kill_pipeline(self):
         self._cancel_timeout()
-        for proc in (self._ffmpeg_proc, self._scrcpy_proc):
+        # Matar el script shell (que es _ffmpeg_proc)
+        for proc in (self._ffmpeg_proc,):
             if proc and proc.poll() is None:
                 proc.terminate()
                 try:
@@ -177,7 +178,19 @@ class StreamManager:
                 except subprocess.TimeoutExpired:
                     proc.kill()
         self._ffmpeg_proc = None
-        self._scrcpy_proc = None
+
+        # Matar cualquier scrcpy huérfano de este device
+        if self._active_device:
+            import signal
+            safe_id = self._active_device.replace(":", "_")
+            subprocess.run(
+                ["pkill", "-f", f"scrcpy.*stream_{safe_id}"],
+                capture_output=True, timeout=3
+            )
+            subprocess.run(
+                ["pkill", "-f", f"adb.*scrcpy.*{self._active_device}"],
+                capture_output=True, timeout=3
+            )
 
         if self._video_path:
             self._video_path.unlink(missing_ok=True)
