@@ -99,36 +99,17 @@ async def stream_ws(ws: WebSocket, device_id: str):
     cmd_task = asyncio.create_task(handle_commands())
 
     try:
-        # 1. Enviar init segment (H.264 codec info)
-        import base64
-        init = await reader.read_init()
-        if init:
-            await ws.send_json({
-                "type": "init",
-                "mime": 'video/mp4; codecs="avc1.42E01E"',
-                "data": base64.b64encode(init).decode(),
-            })
-
-        # 2. Enviar fragments de media en loop
         while True:
-            fragment = await reader.read_fragment()
-            if fragment is None:
+            frame = await reader.read_frame()
+            if frame is None:
                 await asyncio.sleep(1)
                 reader = await loop.run_in_executor(
                     _executor, stream_manager.start_stream, device_id
                 )
-                # Re-enviar init tras reconexión
-                init = await reader.read_init()
-                if init:
-                    await ws.send_json({
-                        "type": "init",
-                        "mime": 'video/mp4; codecs="avc1.42E01E"',
-                        "data": base64.b64encode(init).decode(),
-                    })
                 continue
 
             try:
-                await ws.send_bytes(fragment)
+                await ws.send_bytes(frame)
             except Exception:
                 break
 

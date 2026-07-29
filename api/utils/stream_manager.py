@@ -157,37 +157,60 @@ class StreamManager:
         self._video_path = TEMP_DIR / f"stream_{safe_id}.mkv"
         self._video_path.unlink(missing_ok=True)
 
-        # Abrir log de errores para debug
-        err_log = TEMP_DIR / f"stream_{safe_id}.log"
-        err_fh = open(err_log, "w")
-
+        # scrcpy en background
         self._scrcpy_proc = subprocess.Popen(
             [
                 "scrcpy", "-s", device_id,
                 "--no-window", "--no-audio",
-                "--max-size=1080", "--max-fps=15",
+                "--max-size=720", "--max-fps=10",
                 "--record", str(self._video_path),
                 "--record-format=mkv",
             ],
             stdout=subprocess.DEVNULL,
-            stderr=err_fh,
+            stderr=subprocess.DEVNULL,
         )
 
-        # Esperar un poco a que scrcpy inicialice
-        time.sleep(3)
+        # Esperar que scrcpy escriba datos (max 30s)
+        for _ in range(60):
+            if self._video_path.exists() and self._video_path.stat().st_size > 5000:
+                break
+            time.sleep(0.5)
 
+        # ffmpeg: MJPEG pipeline PROBADO
         self._ffmpeg_proc = subprocess.Popen(
             [
-                "ffmpeg", "-loglevel", "quiet", "-re",
-                "-i", str(self._video_path),
-                "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-                "-f", "mp4",
-                "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+                "ffmpeg", "-loglevel", "quiet",
+                "-i", "pipe:0",
+                "-vf", "fps=10,scale=720:-2",
+                "-f", "mjpeg", "-q:v", "10",
                 "pipe:1",
             ],
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
+
+        # Feeder thread: leer archivo → ffmpeg stdin
+        import threading
+        def feed_mkv():
+            try:
+                with open(self._video_path, "rb") as f:
+                    while True:
+                        chunk = f.read(65536)
+                        if chunk:
+                            try:
+                                proc = self._ffmpeg_proc
+                                if proc and proc.stdin:
+                                    proc.stdin.write(chunk)
+                                    proc.stdin.flush()
+                            except Exception:
+                                break
+                        else:
+                            time.sleep(0.1)
+            except Exception:
+                pass
+
+        threading.Thread(target=feed_mkv, daemon=True).start()
 
     def _kill_pipeline(self):
         self._cancel_timeout()
@@ -242,54 +265,16 @@ class StreamManager:
 
 
 class FrameReader:
-    """Lee fragmentos fMP4 del stdout de ffmpeg (H.264, MediaSource-ready)."""
+    """Lee frames JPEG del stdout de ffmpeg."""
 
-    FRAGMENT_START = b"styp"
+    JPEG_SOI = b"\xff\xd8"
+    JPEG_EOI = b"\xff\xd9"
 
     def __init__(self, device_id: str):
         self.device_id = device_id
         self._buf = b""
-        self._init_sent = False
-        self._init_data: Optional[bytes] = None
 
-    async def read_init(self) -> Optional[bytes]:
-        """Retorna el init segment (ftyp + moov) la primera vez."""
-        if self._init_data is not None:
-            return self._init_data if not self._init_sent else None
-
-        mgr = StreamManager()
-        proc = mgr._ffmpeg_proc
-        if proc is None or proc.poll() is not None or proc.stdout is None:
-            return None
-
-        stdout = proc.stdout
-        loop = asyncio.get_event_loop()
-        start = time.time()
-
-        # Leer hasta encontrar moov
-        while time.time() - start < 15:
-            moov = self._buf.find(b"moov")
-            if moov >= 0 and self._buf[:4] == b"\x00\x00\x00":
-                # Init segment: todo hasta después de moov
-                end = moov + self._int32_at(self._buf, moov - 4)
-                if end <= len(self._buf):
-                    self._init_data = self._buf[:end]
-                    self._buf = self._buf[end:]
-                    self._init_sent = True
-                    return self._init_data
-
-            try:
-                chunk = await loop.run_in_executor(None, stdout.read, 65536)
-                if not chunk:
-                    return None
-                self._buf += chunk
-            except Exception:
-                return None
-
-        return self._buf[:4096] if self._buf else None  # fallback
-
-    async def read_fragment(self) -> Optional[bytes]:
-        """Retorna un fragmento de media (styp + moof + mdat)."""
+    async def read_frame(self) -> Optional[bytes]:
         mgr = StreamManager()
         proc = mgr._ffmpeg_proc
         if proc is None or proc.poll() is not None or proc.stdout is None:
@@ -299,36 +284,21 @@ class FrameReader:
         loop = asyncio.get_event_loop()
 
         while True:
-            # Buscar styp (start of fragment)
-            idx = self._buf.find(self.FRAGMENT_START)
-            if idx >= 0:
-                # El fragmento empieza en el box size antes de styp
-                if idx >= 4:
-                    size = self._int32_at(self._buf, idx - 4)
-                    end = idx - 4 + size
-                    if end <= len(self._buf):
-                        fragment = self._buf[idx - 4 : end]
-                        self._buf = self._buf[end:]
-                        return fragment
-                    # Datos insuficientes: leer más
-                else:
-                    # styp al inicio sin size box → extraño, saltar
-                    self._buf = self._buf[idx + 4:]
-                    continue
+            soi = self._buf.find(self.JPEG_SOI)
+            eoi = self._buf.find(self.JPEG_EOI, soi + 2) if soi >= 0 else -1
+
+            if soi >= 0 and eoi > soi:
+                frame = self._buf[soi : eoi + 2]
+                self._buf = self._buf[eoi + 2 :]
+                return frame
 
             try:
-                chunk = await loop.run_in_executor(None, stdout.read, 65536)
+                chunk = await loop.run_in_executor(None, stdout.read, 32768)
                 if not chunk:
                     return None
                 self._buf += chunk
             except Exception:
                 return None
-
-    @staticmethod
-    def _int32_at(data: bytes, offset: int) -> int:
-        if offset + 4 > len(data):
-            return 999999
-        return int.from_bytes(data[offset:offset + 4], "big")
 
 
 # Singleton helper
