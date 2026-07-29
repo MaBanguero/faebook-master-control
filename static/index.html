@@ -61,8 +61,8 @@
     /* Streaming full-height */
     .stream-full { display: flex; flex-direction: column; height: calc(100vh - 80px); }
     .stream-controls { flex-shrink: 0; display: flex; gap: 12px; align-items: center; padding: 10px 16px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; margin-bottom: 10px; }
-    .stream-video-wrap { flex: 1; background: #0b1120; border: 1px solid #334155; border-radius: 12px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; }
-    .stream-video-wrap img { width: 100%; height: 100%; object-fit: contain; }
+    .stream-video-wrap { flex: 1; background: #0b1120; border: 1px solid #334155; border-radius: 12px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; touch-action: none; cursor: crosshair; }
+    .stream-video-wrap img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
     .stream-stats-bar { flex-shrink: 0; display: flex; gap: 16px; padding: 8px 16px; margin-top: 8px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; }
     .stream-stats-bar .stat-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
     .stream-stats-bar .stat-label { color: #64748b; }
@@ -743,6 +743,7 @@
       });
 
       wrap.onpointerdown = (e) => {
+        e.preventDefault();
         const c = getCoords(e);
         streamTouchStart = { ...mapCoords(c.bx, c.by, c.vw, c.vh), time: Date.now() };
       };
