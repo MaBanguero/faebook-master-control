@@ -157,40 +157,66 @@ class StreamManager:
         self._video_path = TEMP_DIR / f"stream_{safe_id}.mkv"
         self._video_path.unlink(missing_ok=True)
 
-        # Usar el script wrapper que maneja scrcpy + ffmpeg
-        script = str(Path(__file__).parent.parent.parent / "stream_device.sh")
+        # 1. Lanzar scrcpy (sin bash, directo con subprocess)
+        self._scrcpy_proc = subprocess.Popen(
+            [
+                "scrcpy", "-s", device_id,
+                "--no-window", "--no-audio",
+                "--max-size=1080", "--max-fps=15",
+                "--record", str(self._video_path),
+                "--record-format=mkv",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        # 2. Esperar a que el archivo .mkv tenga datos (max 30s)
+        for _ in range(60):
+            if self._video_path.exists() and self._video_path.stat().st_size > 5000:
+                break
+            time.sleep(0.5)
+
+        # 3. Lanzar ffmpeg leyendo el archivo en crecimiento
         self._ffmpeg_proc = subprocess.Popen(
-            [script, device_id],
+            [
+                "ffmpeg", "-loglevel", "quiet", "-re",
+                "-i", str(self._video_path),
+                "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+                "-f", "mp4",
+                "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+                "pipe:1",
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
-        # El script ya lanza scrcpy internamente; guardamos referencia vacía
-        self._scrcpy_proc = None
 
     def _kill_pipeline(self):
         self._cancel_timeout()
-        # Matar el script shell (que es _ffmpeg_proc)
+        # Matar ffmpeg
         if self._ffmpeg_proc and self._ffmpeg_proc.poll() is None:
             self._ffmpeg_proc.terminate()
             try:
                 self._ffmpeg_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self._ffmpeg_proc.kill()
-                self._ffmpeg_proc.wait(timeout=2)
         self._ffmpeg_proc = None
 
-        # Matar cualquier scrcpy/ffmpeg huérfano de este device
+        # Matar scrcpy
+        if self._scrcpy_proc and self._scrcpy_proc.poll() is None:
+            self._scrcpy_proc.terminate()
+            try:
+                self._scrcpy_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._scrcpy_proc.kill()
+        self._scrcpy_proc = None
+
+        # Matar cualquier scrcpy/ffmpeg huérfano adicional
         if self._active_device:
             safe_id = self._active_device.replace(":", "_")
             subprocess.run(
-                ["pkill", "-f", f"scrcpy.*stream_{safe_id}"],
+                ["pkill", "-f", f"scrcpy.*{safe_id}"],
                 capture_output=True, timeout=3
             )
-            subprocess.run(
-                ["pkill", "-f", f"adb.*scrcpy.*{self._active_device}"],
-                capture_output=True, timeout=3
-            )
-            # Esperar a que mueran
             time.sleep(0.5)
 
         if self._video_path:
