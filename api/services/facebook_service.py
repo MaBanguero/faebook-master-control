@@ -42,7 +42,9 @@ class FacebookService:
     def _worker_cambio_cuenta(self, d_id, indice, flag, t_id):
         try:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
-            automator = FacebookAutomator(d_id)
+            dev = dispositivo_service.obtener_dispositivo(d_id)
+            adb_id = dev.adb_id if dev else d_id
+            automator = FacebookAutomator(adb_id)
             exito = automator.rotar_perfil_secuencial(indice, flag)
             self._finalizar_tarea(d_id, t_id, exito)
         except Exception:
@@ -54,7 +56,9 @@ class FacebookService:
             threading.Thread(target=self._worker_like, args=(d_id, link, flag, t_id), daemon=True).start()
 
     def _worker_like(self, d_id, link, flag, t_id):
-        automator = FacebookAutomator(d_id)
+        dev = dispositivo_service.obtener_dispositivo(d_id)
+        adb_id = dev.adb_id if dev else d_id
+        automator = FacebookAutomator(adb_id)
         exito = automator.proceso_like_facebook(link, flag)
         self._finalizar_tarea(d_id, t_id, exito)
 
@@ -76,7 +80,9 @@ class FacebookService:
             ).start()
 
     def _worker_comentario(self, d_id, link, texto, flag, t_id):
-        automator = FacebookAutomator(d_id)
+        dev = dispositivo_service.obtener_dispositivo(d_id)
+        adb_id = dev.adb_id if dev else d_id
+        automator = FacebookAutomator(adb_id)
         exito = automator.proceso_comentario_reels(link, texto, flag)
         self._finalizar_tarea(d_id, t_id, exito)
 
@@ -102,7 +108,9 @@ class FacebookService:
     def _worker_compartir(self, d_id, link, flag, t_id):
         try:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
-            automator = FacebookAutomator(d_id)
+            dev = dispositivo_service.obtener_dispositivo(d_id)
+            adb_id = dev.adb_id if dev else d_id
+            automator = FacebookAutomator(adb_id)
             exito = automator.proceso_compartir_post(link, flag)
             self._finalizar_tarea(d_id, t_id, exito)
         except Exception as e:
@@ -176,7 +184,9 @@ class FacebookService:
         """Worker para un dispositivo. 1 comentario = 1 cuenta, sin repeticiones."""
         try:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
-            automator = FacebookAutomator(d_id)
+            dev = dispositivo_service.obtener_dispositivo(d_id)
+            adb_id = dev.adb_id if dev else d_id
+            automator = FacebookAutomator(adb_id)
 
             # Obtener cuentas disponibles
             cuentas = automator.obtener_cuentas()
@@ -235,7 +245,9 @@ class FacebookService:
     def _worker_flujo_completo(self, d_id, link, comentario, flag, t_id):
         try:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
-            automator = FacebookAutomator(d_id)
+            dev = dispositivo_service.obtener_dispositivo(d_id)
+            adb_id = dev.adb_id if dev else d_id
+            automator = FacebookAutomator(adb_id)
 
             # Obtener el índice actual de rotación para este dispositivo
             if d_id not in self.contadores_rotacion:
@@ -277,7 +289,9 @@ class FacebookService:
         """Worker de calentamiento Facebook en un dispositivo."""
         try:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
-            automator = FacebookAutomator(d_id)
+            dev = dispositivo_service.obtener_dispositivo(d_id)
+            adb_id = dev.adb_id if dev else d_id
+            automator = FacebookAutomator(adb_id)
             siguiente = automator.proceso_calentamiento(
                 detener_flag=flag,
                 indice_inicial=indice,

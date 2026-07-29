@@ -57,22 +57,20 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ Nota: No se pudo reiniciar ADB (podría no ser necesario): {e}")
 
-    # Paso 1: Resetear servicios UIAutomator2
-    print("🔄 Paso 1: Verificando dispositivos y reseteando UIAutomator2...")
-    try:
-        from reset_all_devices import reset_device, get_connected_devices
-
-        # IMPORTANTE: get_connected_devices debe usar el puerto del .env internamente
-        devices = get_connected_devices()
-        if devices:
-            print(f"   📱 {len(devices)} dispositivo(s) detectado(s)")
-            for device_id in devices:
-                reset_device(device_id)
-            print(f"   ✅ Limpieza de servicios completada")
-        else:
-            print("   ℹ️ No se detectaron dispositivos por USB/Red")
-    except Exception as e:
-        print(f"   ⚠️ Error en reset_all_devices: {e}")
+    # Paso 1: Resetear servicios UIAutomator2 (saltado para evitar OOM con 38 disp)
+    print("🔄 Paso 1: Reset UIAutomator2 saltado (--skip-reset)")
+    # try:
+    #     from reset_all_devices import reset_device, get_connected_devices
+    #     devices = get_connected_devices()
+    #     if devices:
+    #         print(f"   📱 {len(devices)} dispositivo(s) detectado(s)")
+    #         for device_id in devices:
+    #             reset_device(device_id)
+    #         print(f"   ✅ Limpieza de servicios completada")
+    #     else:
+    #         print("   ℹ️ No se detectaron dispositivos por USB/Red")
+    # except Exception as e:
+    #     print(f"   ⚠️ Error en reset_all_devices: {e}")
 
     # Paso 2: Iniciar manager de ADB personalizado
     print(f"🔄 Paso 2: Conectando Manager al puerto {CUSTOM_ADB_PORT}...")

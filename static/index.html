@@ -147,7 +147,7 @@
   <div id="toast-container"></div>
 
   <script>
-    const API = 'http://localhost:8001';
+    const API = location.origin;
     let currentPage = 'dashboard';
     let devices = [];
     let tasks = [];
@@ -208,7 +208,7 @@
 
     function startPolling() {
       fetchDevices(); fetchTasks();
-      pollInterval = setInterval(() => { fetchDevices(); fetchTasks(); if (currentPage === 'dashboard') renderDashboard(); }, 3000);
+      pollInterval = setInterval(() => { fetchDevices(); fetchTasks(); if (currentPage === 'dashboard') renderDashboard(); }, 10000);
     }
 
     function stopPolling() {
@@ -410,7 +410,7 @@
         if (!container) return;
         container.innerHTML = devices.length === 0
           ? '<p class="text-sm text-slate-500">No hay dispositivos conectados</p>'
-          : devices.map(d => `<label><input type="checkbox" value="${d.id}" ${d.estado === 'inactivo' ? '' : 'disabled'}><span class="text-sm">${d.id.slice(0,20)}… <span class="text-xs text-slate-500">(${d.estado})</span></span></label>`).join('');
+          : devices.map(d => `<label><input type="checkbox" value="${d.id}" ${d.estado === 'inactivo' ? '' : 'disabled'}><span class="text-sm">${d.nombre || d.id} <span class="text-xs text-slate-500">(${d.estado})</span></span></label>`).join('');
       });
     }
 
