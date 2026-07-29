@@ -88,15 +88,16 @@ class ConnectivityChecker:
     @staticmethod
     def check_internet(serial: str) -> bool:
         """
-        Verifica conectividad real a internet.
-        Google's generate_204 devuelve HTTP 204 si hay internet.
+        Verifica conectividad real a internet usando dumpsys connectivity.
+        Android valida la conexión automáticamente — si aparece 'VALIDATED',
+        el dispositivo tiene acceso a internet.
         """
         out = ConnectivityChecker._adb(
             serial,
-            "curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 http://clients3.google.com/generate_204",
-            timeout=8
+            "dumpsys connectivity | grep -E 'VALIDATED|INTERNET.*VALIDATED' | head -1",
+            timeout=5
         )
-        return out.strip() == "204"
+        return "VALIDATED" in out
 
     # ── Full check ────────────────────────────────────────────
 
