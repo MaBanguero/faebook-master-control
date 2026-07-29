@@ -157,7 +157,7 @@ class StreamManager:
         self._video_path = TEMP_DIR / f"stream_{safe_id}.mkv"
         self._video_path.unlink(missing_ok=True)
 
-        # 1. Lanzar scrcpy (sin bash, directo con subprocess)
+        # 1. Lanzar scrcpy (NO bloquear)
         self._scrcpy_proc = subprocess.Popen(
             [
                 "scrcpy", "-s", device_id,
@@ -170,13 +170,7 @@ class StreamManager:
             stderr=subprocess.DEVNULL,
         )
 
-        # 2. Esperar a que el archivo .mkv tenga datos (max 30s)
-        for _ in range(60):
-            if self._video_path.exists() and self._video_path.stat().st_size > 5000:
-                break
-            time.sleep(0.5)
-
-        # 3. Lanzar ffmpeg leyendo el archivo en crecimiento
+        # 2. Lanzar ffmpeg inmediatamente — esperará a que el archivo tenga datos
         self._ffmpeg_proc = subprocess.Popen(
             [
                 "ffmpeg", "-loglevel", "quiet", "-re",
