@@ -157,7 +157,10 @@ class StreamManager:
         self._video_path = TEMP_DIR / f"stream_{safe_id}.mkv"
         self._video_path.unlink(missing_ok=True)
 
-        # 1. Lanzar scrcpy (NO bloquear)
+        # Abrir log de errores para debug
+        err_log = TEMP_DIR / f"stream_{safe_id}.log"
+        err_fh = open(err_log, "w")
+
         self._scrcpy_proc = subprocess.Popen(
             [
                 "scrcpy", "-s", device_id,
@@ -167,10 +170,12 @@ class StreamManager:
                 "--record-format=mkv",
             ],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=err_fh,
         )
 
-        # 2. Lanzar ffmpeg inmediatamente — esperará a que el archivo tenga datos
+        # Esperar un poco a que scrcpy inicialice
+        time.sleep(3)
+
         self._ffmpeg_proc = subprocess.Popen(
             [
                 "ffmpeg", "-loglevel", "quiet", "-re",
