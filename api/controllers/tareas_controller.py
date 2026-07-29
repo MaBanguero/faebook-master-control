@@ -94,3 +94,16 @@ async def cancelar_tarea(tarea_id: str):
     except Exception as e:
         print(f"❌ Error cancelando tarea {tarea_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tareas/detener-todas")
+async def detener_todas_tareas():
+    """Detiene todas las tareas activas de todas las plataformas."""
+    try:
+        detenidas = tareas_service.detener_todas()
+        return {
+            "message": f"{detenidas} tareas detenidas",
+            "detenidas": detenidas,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

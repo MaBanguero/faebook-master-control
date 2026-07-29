@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faebook Master Control — Dashboard</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --yellow: #d2991d;
+      --red: #f85149;
+      --radius: 8px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ──────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 600; }
+    .badge {
+      background: var(--green);
+      color: #000;
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+    .badge.off { background: var(--muted); }
+
+    /* ── Layout ───────────────────────────────── */
+    main {
+      display: flex;
+      flex: 1;
+      gap: 16px;
+      padding: 16px;
+    }
+    /* Panel izquierdo: lista + stats */
+    .sidebar {
+      width: 340px;
+      min-width: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+    .panel h3 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Device selector ──────────────────────── */
+    #device-select {
+      width: 100%;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      outline: none;
+    }
+    #device-select:focus { border-color: var(--accent); }
+
+    /* ── Stats grid ───────────────────────────── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .stat-card {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 10px;
+      text-align: center;
+    }
+    .stat-card .label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .stat-card .value {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .stat-card .value.cpu { color: var(--accent); }
+    .stat-card .value.ram { color: var(--green); }
+    .stat-card .value.batt { color: var(--yellow); }
+    .stat-card .value.temp { color: var(--red); }
+
+    /* ── Stream area ──────────────────────────── */
+    .stream-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      position: relative;
+      min-height: 400px;
+      overflow: hidden;
+    }
+    .stream-area img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .placeholder {
+      color: var(--muted);
+      font-size: 0.9rem;
+      text-align: center;
+      padding: 40px;
+    }
+    .placeholder .icon { font-size: 3rem; margin-bottom: 12px; }
+    #stream-status {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 0.65rem;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: #00000088;
+      backdrop-filter: blur(4px);
+    }
+    #stream-status.live { color: var(--green); }
+    #stream-status.dead { color: var(--red); }
+    #stream-status.connecting { color: var(--yellow); }
+
+    /* ── Controls ─────────────────────────────── */
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.15s;
+    }
+    .btn:hover { border-color: var(--accent); }
+    .btn.danger:hover { border-color: var(--red); color: var(--red); }
+
+    /* ── Responsive ───────────────────────────── */
+    @media (max-width: 900px) {
+      main { flex-direction: column; }
+      .sidebar { width: 100%; min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <h1>📱 Faebook Master Control</h1>
+    <span id="device-count" class="badge">--</span>
+  </header>
+
+  <!-- MAIN -->
+  <main>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+
+      <!-- Device Selector -->
+      <div class="panel">
+        <h3>🔍 Seleccionar dispositivo</h3>
+        <select id="device-select">
+          <option value="">-- Cargando dispositivos --</option>
+        </select>
+      </div>
+
+      <!-- Stats -->
+      <div class="panel">
+        <h3>📊 Estadísticas</h3>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="label">CPU</div>
+            <div class="value cpu" id="stat-cpu">--%</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">RAM libre</div>
+            <div class="value ram" id="stat-ram">-- MB</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Batería</div>
+            <div class="value batt" id="stat-batt">--%</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Temp</div>
+            <div class="value temp" id="stat-temp">--°C</div>
+          </div>
+        </div>
+        <div style="margin-top:8px; font-size:0.7rem; color:var(--muted);">
+          📱 <span id="stat-model">---</span> |
+          ⚡ <span id="stat-charge">---</span> |
+          🖥 <span id="stat-screen">---</span>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="panel">
+        <h3>⚙️ Controles</h3>
+        <div class="controls">
+          <button class="btn" id="btn-refresh">🔄 Refrescar</button>
+          <button class="btn danger" id="btn-stop">⏹ Detener stream</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Stream Panel -->
+    <div class="stream-area" id="stream-area">
+      <div class="placeholder" id="placeholder">
+        <div class="icon">📱</div>
+        <p>Selecciona un dispositivo<br>para iniciar la transmisión</p>
+      </div>
+      <img id="stream-img" style="display:none" alt="Device stream" />
+      <div id="stream-status" style="display:none">⚫</div>
+    </div>
+
+  </main>
+
+  <script>
+    // ══════════════════════════════════════════════════════
+    // STATE
+    // ══════════════════════════════════════════════════════
+    let currentDevice = null;
+    let ws = null;
+    let statsInterval = null;
+    let reconnectTimer = null;
+
+    const API = '/api';
+
+    // DOM
+    const $select  = document.getElementById('device-select');
+    const $img     = document.getElementById('stream-img');
+    const $area    = document.getElementById('stream-area');
+    const $ph      = document.getElementById('placeholder');
+    const $status  = document.getElementById('stream-status');
+    const $count   = document.getElementById('device-count');
+
+    // Stats
+    const $cpu   = document.getElementById('stat-cpu');
+    const $ram   = document.getElementById('stat-ram');
+    const $batt  = document.getElementById('stat-batt');
+    const $temp  = document.getElementById('stat-temp');
+    const $model = document.getElementById('stat-model');
+    const $charge = document.getElementById('stat-charge');
+    const $screen = document.getElementById('stat-screen');
+
+    // ══════════════════════════════════════════════════════
+    // DEVICE LIST
+    // ══════════════════════════════════════════════════════
+    async function loadDevices() {
+      try {
+        const res = await fetch(`${API}/dispositivos`);
+        const data = await res.json();
+        const devices = Array.isArray(data) ? data : (data.devices || []);
+
+        $count.textContent = `${devices.length} disp.`;
+        $count.className = devices.length > 0 ? 'badge' : 'badge off';
+
+        const currentVal = $select.value;
+        $select.innerHTML = '<option value="">-- Seleccionar dispositivo --</option>';
+
+        for (const d of devices) {
+          const adbId = d.adb_id;
+          const selected = adbId === currentVal ? 'selected' : '';
+          const label = d.nombre || `${d.model || '?'} (${(adbId||'').slice(-6)})`;
+          $select.innerHTML += `<option value="${adbId}" ${selected}>${label}</option>`;
+        }
+
+        if (!devices.length) {
+          $select.innerHTML = '<option value="">-- Sin dispositivos --</option>';
+        }
+      } catch (e) {
+        console.error('Error cargando dispositivos:', e);
+      }
+    }
+
+    // ══════════════════════════════════════════════════════
+    // WEBSOCKET STREAM
+    // ══════════════════════════════════════════════════════
+    function connectStream(deviceId) {
+      disconnectStream();
+
+      currentDevice = deviceId;
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const url = `${proto}://${location.host}/api/ws/stream/${deviceId}`;
+
+      setStatus('Conectando...', 'connecting');
+      ws = new WebSocket(url);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        setStatus('En vivo', 'live');
+        $img.style.display = 'block';
+        $ph.style.display = 'none';
+      };
+
+      ws.onmessage = (evt) => {
+        const blob = new Blob([evt.data], { type: 'image/jpeg' });
+        const oldUrl = $img.src;
+        $img.src = URL.createObjectURL(blob);
+        if (oldUrl && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
+        setStatus('En vivo', 'live');
+      };
+
+      ws.onclose = () => {
+        setStatus('Desconectado', 'dead');
+        if (currentDevice === deviceId) {
+          reconnectTimer = setTimeout(() => connectStream(deviceId), 2000);
+        }
+      };
+
+      ws.onerror = () => {
+        setStatus('Error', 'dead');
+      };
+    }
+
+    function disconnectStream() {
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      if (ws) { ws.close(); ws = null; }
+      currentDevice = null;
+      $img.style.display = 'none';
+      $img.src = '';
+      $ph.style.display = '';
+      $status.style.display = 'none';
+      clearStats();
+      if (statsInterval) { clearInterval(statsInterval); statsInterval = null; }
+    }
+
+    function setStatus(text, cls) {
+      $status.textContent = text;
+      $status.className = cls;
+      $status.style.display = 'block';
+    }
+
+    // ══════════════════════════════════════════════════════
+    // STATS POLLING
+    // ══════════════════════════════════════════════════════
+    async function fetchStats(deviceId) {
+      try {
+        const res = await fetch(`${API}/dispositivo/${deviceId}/stats`);
+        const s = await res.json();
+
+        $cpu.textContent   = s.cpu_percent != null ? `${s.cpu_percent}%` : '--%';
+        $ram.textContent   = s.ram_mb ? `${s.ram_mb} MB` : '-- MB';
+        $batt.textContent  = s.battery_level != null ? `${s.battery_level}%` : '--%';
+        $temp.textContent  = s.battery_temp != null ? `${s.battery_temp}°C` : '--°C';
+        $model.textContent = s.model || '---';
+        $charge.textContent = s.battery_status || '---';
+        $screen.textContent = s.screen_on ? 'ON' : 'OFF';
+      } catch (e) {
+        console.error('Error stats:', e);
+      }
+    }
+
+    function clearStats() {
+      $cpu.textContent  = '--%';
+      $ram.textContent  = '-- MB';
+      $batt.textContent = '--%';
+      $temp.textContent = '--°C';
+      $model.textContent = '---';
+      $charge.textContent = '---';
+      $screen.textContent = '---';
+    }
+
+    // ══════════════════════════════════════════════════════
+    // EVENTS
+    // ══════════════════════════════════════════════════════
+    $select.addEventListener('change', () => {
+      const deviceId = $select.value;
+      if (!deviceId) {
+        disconnectStream();
+        return;
+      }
+      disconnectStream();
+      connectStream(deviceId);
+      statsInterval = setInterval(() => fetchStats(deviceId), 2000);
+      fetchStats(deviceId);
+    });
+
+    document.getElementById('btn-refresh').addEventListener('click', () => {
+      loadDevices();
+      if (currentDevice) fetchStats(currentDevice);
+    });
+
+    document.getElementById('btn-stop').addEventListener('click', () => {
+      $select.value = '';
+      disconnectStream();
+    });
+
+    // ══════════════════════════════════════════════════════
+    // INIT
+    // ══════════════════════════════════════════════════════
+    loadDevices();
+    setInterval(loadDevices, 30000); // refresh device list every 30s
+  </script>
+
+</body>
+</html>

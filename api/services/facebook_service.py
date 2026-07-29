@@ -27,6 +27,11 @@ class FacebookService:
         self.contadores_rotacion = {}
         self._initialized = True
 
+    def detener_todos(self):
+        for flag in self.fb_detener_flags.values():
+            flag.set()
+        self.fb_detener_flags.clear()
+
     def ejecutar_cambio_cuentas(self, dispositivos_ids: List[str], tarea_id: str):
         for d_id in dispositivos_ids:
             if d_id not in self.contadores_rotacion:

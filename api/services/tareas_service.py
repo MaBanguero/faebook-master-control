@@ -240,6 +240,30 @@ class TareasService:
                 count += 1
             return count
 
+    def detener_todas(self) -> int:
+        """Detiene todas las tareas activas. Returns número de tareas detenidas."""
+        with self._thread_lock:
+            count = 0
+            for tarea_id, flags in list(self._detener_flags.items()):
+                for flag in list(flags.values()):
+                    flag.set()
+                count += 1
+            self._detener_flags.clear()
+            # También detener flags de plataformas
+            try:
+                from api.services.facebook_service import facebook_service
+                facebook_service.detener_todos()
+            except Exception: pass
+            try:
+                from api.services.tiktok_service import tiktok_service
+                tiktok_service.detener_todos()
+            except Exception: pass
+            try:
+                from api.services.instagram_service import instagram_service
+                instagram_service.detener_todos()
+            except Exception: pass
+            return count
+
     def marcar_dispositivo_finalizado(self, tarea_id: str, exito: bool = True):
         """
         Indica que un dispositivo terminó. Cuando todos terminan se finaliza la tarea automáticamente.
