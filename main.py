@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from api.controllers import dispositivo_controller, tareas_controller, facebook_controller, tiktok_controller, instagram_controller
 from api.controllers.ai_controller import router as ai_router
+from api.controllers.stream_controller import router as stream_router
 from api.utils.adb_custom_server import custom_adb_manager
 
 # En Ubuntu, simplemente usamos "adb". Asegúrate de tenerlo instalado: sudo apt install adb
@@ -99,6 +100,7 @@ app.include_router(facebook_controller.router, prefix="/api", tags=["facebook"])
 app.include_router(tiktok_controller.router, prefix="/api", tags=["tiktok"])
 app.include_router(instagram_controller.router, prefix="/api", tags=["instagram"])
 app.include_router(ai_router, prefix="/api", tags=["ia"])
+app.include_router(stream_router, prefix="/api", tags=["streaming"])
 
 
 @app.get("/health")

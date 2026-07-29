@@ -54,6 +54,36 @@
     .tab { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; color: #64748b; }
     .tab:hover { color: #e2e8f0; background: #1e293b; }
     .tab.active { background: #6366f1; color: white; }
+    /* Streaming full-height */
+    .stream-full { display: flex; flex-direction: column; height: calc(100vh - 80px); }
+    .stream-controls { flex-shrink: 0; display: flex; gap: 12px; align-items: center; padding: 10px 16px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; margin-bottom: 10px; }
+    .stream-video-wrap { flex: 1; background: #0b1120; border: 1px solid #334155; border-radius: 12px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; }
+    .stream-video-wrap img { width: 100%; height: 100%; object-fit: contain; }
+    .stream-stats-bar { flex-shrink: 0; display: flex; gap: 16px; padding: 8px 16px; margin-top: 8px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; }
+    .stream-stats-bar .stat-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .stream-stats-bar .stat-label { color: #64748b; }
+    .stream-stats-bar .stat-val { font-weight: 600; }
+    .no-padding { padding: 0 !important; }
+    .select-sm { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; color: #e2e8f0; font-size: 13px; cursor: pointer; outline: none; min-width: 280px; }
+    .select-sm:focus { border-color: #6366f1; }
+    /* Mobile */
+    .menu-toggle { display: none; background: none; border: none; color: #94a3b8; font-size: 1.5rem; cursor: pointer; padding: 4px 8px; }
+    .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
+    @media (max-width: 768px) {
+      .menu-toggle { display: block; }
+      aside { position: fixed; left: -260px; top: 0; bottom: 0; z-index: 50; transition: left 0.25s; }
+      aside.open { left: 0; }
+      .sidebar-overlay.show { display: block; }
+      main { padding: 8px !important; }
+      .stream-full { height: calc(100vh - 110px) !important; }
+      .stream-controls { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+      .stream-controls h2 { font-size: 0.85rem; }
+      .select-sm { min-width: 0; flex: 1; font-size: 12px; padding: 6px 8px; }
+      .stream-stats-bar { flex-wrap: wrap; gap: 8px; padding: 6px 10px; font-size: 11px; }
+      .stream-stats-bar .stat-item { font-size: 11px; }
+      .stream-video-wrap { border-radius: 8px; }
+      .card { padding: 10px !important; }
+    }
     .checkbox-group label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; transition: background 0.15s; }
     .checkbox-group label:hover { background: #1e293b; }
     .checkbox-group input[type="checkbox"] { accent-color: #6366f1; width: 16px; height: 16px; }
@@ -66,6 +96,10 @@
   </style>
 </head>
 <body class="text-slate-200 min-h-screen flex">
+  <!-- Mobile menu button -->
+  <button class="menu-toggle fixed top-3 left-3 z-50" onclick="toggleSidebar()" aria-label="Menú">☰</button>
+  <!-- Overlay -->
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
   <!-- Sidebar -->
   <aside class="w-60 bg-[#0b1120] border-r border-slate-800 flex flex-col shrink-0">
     <div class="p-5 border-b border-slate-800">
@@ -90,6 +124,10 @@
       <div class="nav-item" data-page="instagram">
         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678c-3.405 0-6.162 2.76-6.162 6.162 0 3.405 2.76 6.162 6.162 6.162 3.405 0 6.162-2.76 6.162-6.162 0-3.405-2.76-6.162-6.162-6.162zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/></svg>
         Instagram
+      </div>
+      <div class="nav-item" data-page="streaming">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+        Streaming
       </div>
     </nav>
     <div class="p-3 border-t border-slate-800" id="server-status">
@@ -116,6 +154,10 @@
     let pollInterval = null;
 
     // ── Navigation ──
+    function toggleSidebar() {
+      document.querySelector('aside').classList.toggle('open');
+      document.getElementById('sidebar-overlay').classList.toggle('show');
+    }
     document.getElementById('sidebar-nav').addEventListener('click', e => {
       const item = e.target.closest('.nav-item');
       if (!item) return;
@@ -124,6 +166,9 @@
       currentPage = item.dataset.page;
       renderPage();
       if (currentPage === 'dashboard') startPolling(); else stopPolling();
+      // Cerrar sidebar en mobile
+      document.querySelector('aside').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('show');
     });
 
     // ── Toast ──
@@ -173,12 +218,15 @@
     // ── Render ──
     function renderPage() {
       const main = document.getElementById('main-content');
+      main.className = '';  // restaurar padding
       stopPolling();
+      stopStreamingPolling();
       switch (currentPage) {
         case 'dashboard': startPolling(); fetchDevices().then(() => fetchTasks().then(renderDashboard)); break;
         case 'facebook': renderPlatform('facebook', 'fb'); break;
         case 'tiktok': renderPlatform('tiktok', 'tt'); break;
         case 'instagram': renderPlatform('instagram', 'ig'); break;
+        case 'streaming': startStreamingPolling(); renderStreaming(); break;
       }
     }
 
@@ -486,6 +534,178 @@
         btn.disabled = false;
         btn.innerHTML = '✨ Generar Comentarios';
       }
+    }
+
+    // ── Streaming Dashboard ────────────────────────────────────
+    let streamWs = null;
+    let streamDevice = null;
+    let streamStatsInterval = null;
+    let streamReconnectTimer = null;
+
+    function startStreamingPolling() {
+      fetchDevices();
+      streamStatsInterval = setInterval(() => {
+        if (streamDevice) fetchStreamStats(streamDevice);
+      }, 2000);
+    }
+
+    function stopStreamingPolling() {
+      if (streamStatsInterval) { clearInterval(streamStatsInterval); streamStatsInterval = null; }
+      disconnectStream();
+    }
+
+    function renderStreaming() {
+      document.getElementById('main-content').className = 'no-padding';
+      document.getElementById('main-content').innerHTML = `
+        <div class="stream-full">
+          <!-- Barra superior: título + selector + botones -->
+          <div class="stream-controls">
+            <h2 class="text-base font-semibold text-brand-400 whitespace-nowrap mr-2">📡 Streaming</h2>
+            <select id="stream-device-select" class="select-sm" onchange="onStreamDeviceChange(this.value)">
+              <option value="">-- Seleccionar dispositivo --</option>
+            </select>
+            <span id="stream-active-info" class="text-xs"></span>
+            <div class="flex-1"></div>
+            <button class="btn-ghost text-xs" onclick="refreshStreamDevices()">🔄</button>
+            <button class="btn-danger text-xs !py-1" onclick="disconnectStream()" id="stream-stop-btn" style="display:none">⏹ Detener</button>
+          </div>
+
+          <!-- Área de video (todo el espacio disponible) -->
+          <div class="stream-video-wrap">
+            <div id="stream-placeholder" class="flex flex-col items-center justify-center text-slate-500">
+              <svg class="w-20 h-20 mb-4 opacity-25" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              <p class="text-base">Selecciona un dispositivo</p>
+              <p class="text-sm mt-1 opacity-70">La transmisión iniciará en ~15 segundos</p>
+            </div>
+            <img id="stream-img" style="display:none" alt="Pantalla del dispositivo" />
+            <div id="stream-status-badge" class="absolute top-3 left-3 text-xs px-3 py-1 rounded-full bg-black/70 backdrop-blur font-medium" style="display:none"></div>
+          </div>
+
+          <!-- Barra inferior: stats -->
+          <div class="stream-stats-bar">
+            <div class="stat-item"><span class="stat-label">📱</span><span class="stat-val text-slate-300" id="s-model">---</span></div>
+            <div class="stat-item"><span class="stat-label">CPU</span><span class="stat-val text-brand-400" id="s-cpu">--%</span></div>
+            <div class="stat-item"><span class="stat-label">RAM</span><span class="stat-val text-green-400" id="s-ram">-- MB</span></div>
+            <div class="stat-item"><span class="stat-label">🔋</span><span class="stat-val text-yellow-400" id="s-batt">--%</span></div>
+            <div class="stat-item"><span class="stat-label">🌡</span><span class="stat-val text-red-400" id="s-temp">--°C</span></div>
+            <div class="flex-1"></div>
+            <div class="stat-item"><span class="stat-label">Pantalla</span><span class="stat-val text-slate-400" id="s-screen">---</span></div>
+            <div class="stat-item"><span class="stat-label">Carga</span><span class="stat-val text-slate-400" id="s-charge">---</span></div>
+          </div>
+        </div>
+      `;
+
+      populateStreamDeviceSelect();
+    }
+
+    function populateStreamDeviceSelect() {
+      const sel = document.getElementById('stream-device-select');
+      if (!sel) return;
+      const currentVal = sel.value;
+      sel.innerHTML = '<option value="">-- Seleccionar dispositivo --</option>';
+      devices.forEach(d => {
+        const selected = d.adb_id === currentVal ? 'selected' : '';
+        const label = d.nombre || (d.adb_id ? d.adb_id.slice(-8) : '?');
+        sel.innerHTML += `<option value="${d.adb_id}" ${selected}>${label}</option>`;
+      });
+    }
+
+    function refreshStreamDevices() {
+      fetchDevices().then(populateStreamDeviceSelect);
+    }
+
+    function onStreamDeviceChange(deviceId) {
+      disconnectStream();
+      if (!deviceId) {
+        clearStreamStats();
+        return;
+      }
+      streamDevice = deviceId;
+      connectStream(deviceId);
+      fetchStreamStats(deviceId);
+      document.getElementById('stream-stop-btn').style.display = '';
+      document.getElementById('stream-active-info').innerHTML =
+        `<span class="badge badge-blue">Transmitiendo</span>`;
+    }
+
+    function connectStream(deviceId) {
+      disconnectStream();
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const url = `${proto}://${location.host}/api/ws/stream/${deviceId}`;
+
+      setStreamStatus('Conectando...', 'badge-yellow');
+      streamWs = new WebSocket(url);
+      streamWs.binaryType = 'arraybuffer';
+
+      streamWs.onopen = () => {
+        setStreamStatus('En vivo', 'badge-green');
+        document.getElementById('stream-img').style.display = 'block';
+        document.getElementById('stream-placeholder').style.display = 'none';
+      };
+
+      streamWs.onmessage = (evt) => {
+        const blob = new Blob([evt.data], { type: 'image/jpeg' });
+        const img = document.getElementById('stream-img');
+        const oldUrl = img.src;
+        img.src = URL.createObjectURL(blob);
+        if (oldUrl && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
+        setStreamStatus('En vivo', 'badge-green');
+      };
+
+      streamWs.onclose = () => {
+        setStreamStatus('Desconectado', 'badge-red');
+        if (streamDevice === deviceId) {
+          streamReconnectTimer = setTimeout(() => connectStream(deviceId), 2000);
+        }
+      };
+
+      streamWs.onerror = () => setStreamStatus('Error', 'badge-red');
+    }
+
+    function disconnectStream() {
+      if (streamReconnectTimer) { clearTimeout(streamReconnectTimer); streamReconnectTimer = null; }
+      if (streamWs) { streamWs.close(); streamWs = null; }
+      streamDevice = null;
+      const img = document.getElementById('stream-img');
+      const ph = document.getElementById('stream-placeholder');
+      const badge = document.getElementById('stream-status-badge');
+      const stopBtn = document.getElementById('stream-stop-btn');
+      const info = document.getElementById('stream-active-info');
+      if (img) img.style.display = 'none';
+      if (ph) ph.style.display = '';
+      if (badge) badge.style.display = 'none';
+      if (stopBtn) stopBtn.style.display = 'none';
+      if (info) info.innerHTML = '';
+      clearStreamStats();
+    }
+
+    function setStreamStatus(text, cls) {
+      const badge = document.getElementById('stream-status-badge');
+      if (!badge) return;
+      badge.textContent = text;
+      badge.className = `badge ${cls}`;
+      badge.style.display = '';
+    }
+
+    async function fetchStreamStats(deviceId) {
+      try {
+        const res = await api(`/api/dispositivo/${deviceId}/stats`);
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        set('s-cpu', res.cpu_percent != null ? `${res.cpu_percent}%` : '--%');
+        set('s-ram', res.ram_mb ? `${res.ram_mb} MB` : '-- MB');
+        set('s-batt', res.battery_level != null ? `${res.battery_level}%` : '--%');
+        set('s-temp', res.battery_temp != null ? `${res.battery_temp}°C` : '--°C');
+        set('s-model', res.model || '---');
+        set('s-screen', res.screen_on ? 'ON' : 'OFF');
+        set('s-charge', res.battery_status || '---');
+      } catch (e) { /* stats can fail silently */ }
+    }
+
+    function clearStreamStats() {
+      ['s-cpu','s-ram','s-batt','s-temp','s-model','s-screen','s-charge'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = id === 's-model' ? '---' : '--';
+      });
     }
 
     // ── Init ──
