@@ -5,6 +5,7 @@ from api.services.dispositivo_service import dispositivo_service
 from api.services.tareas_service import tareas_service
 from api.models import DispositivoEstado
 from api.utils.facebook_automator import FacebookAutomator
+from api.utils.interaction_tracker import tracker
 import logging
 
 
@@ -59,8 +60,40 @@ class FacebookService:
         dev = dispositivo_service.obtener_dispositivo(d_id)
         adb_id = dev.adb_id if dev else d_id
         automator = FacebookAutomator(adb_id)
-        exito = automator.proceso_like_facebook(link, flag)
-        self._finalizar_tarea(d_id, t_id, exito)
+
+        # Obtener cuentas y filtrar por las que AÚN NO han likeado este link
+        cuentas = automator.obtener_cuentas()
+        disponibles = [c for c in cuentas if not tracker.is_interacted(adb_id, c, link, "like")]
+
+        if not cuentas:
+            print(f"❌ [{d_id}] Sin cuentas configuradas en Facebook")
+            self._finalizar_tarea(d_id, t_id, False)
+            return
+
+        if not disponibles:
+            print(f"✅ [{d_id}] Todas las {len(cuentas)} cuentas ya likearon este link. Saltando.")
+            self._finalizar_tarea(d_id, t_id, True)
+            return
+
+        print(f"📋 [{d_id}] {len(disponibles)}/{len(cuentas)} cuentas disponibles para like")
+
+        exitos = 0
+        for cuenta in disponibles:
+            if flag and flag.is_set():
+                break
+            print(f"   🔄 [{d_id}] Rotando a '{cuenta}'...")
+            if automator.rotar_a_cuenta(cuenta, flag):
+                exito = automator.proceso_like_facebook(link, flag)
+                if exito:
+                    tracker.record(adb_id, cuenta, link, "like")
+                    exitos += 1
+                    print(f"   ✅ [{d_id}] Like: '{cuenta}' → OK")
+                else:
+                    print(f"   ❌ [{d_id}] Like: '{cuenta}' → FALLÓ")
+            else:
+                print(f"   ⚠️ [{d_id}] No se pudo rotar a '{cuenta}'")
+
+        self._finalizar_tarea(d_id, t_id, exitos > 0)
 
     def ejecutar_comentarios(self, d_ids, link, textos, t_id):
         """
@@ -181,62 +214,54 @@ class FacebookService:
             ).start()
 
     def _worker_flujo_multi_cuenta(self, d_id, link, comentarios, flag, t_id):
-        """Worker para un dispositivo. 1 comentario = 1 cuenta, sin repeticiones."""
+        """Worker: 1 cuenta = 1 flujo (like+comentario+compartir). Tracking por nombre."""
         try:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
             dev = dispositivo_service.obtener_dispositivo(d_id)
             adb_id = dev.adb_id if dev else d_id
             automator = FacebookAutomator(adb_id)
 
-            # Obtener cuentas disponibles
+            # Obtener cuentas reales y filtrar
             cuentas = automator.obtener_cuentas()
-            total_disponibles = len(cuentas)
+            disponibles = [c for c in cuentas if not tracker.is_interacted(adb_id, c, link, "like")]
 
             if not cuentas:
-                print(f"❌ [{d_id}] No se detectaron cuentas")
+                print(f"❌ [{d_id}] Sin cuentas configuradas en Facebook")
                 self._finalizar_tarea(d_id, t_id, False)
                 return
 
-            print(f"📋 [{d_id}] {total_disponibles} cuentas disponibles")
+            if not disponibles:
+                print(f"✅ [{d_id}] Todas las {len(cuentas)} cuentas ya likearon este link. Saltando.")
+                self._finalizar_tarea(d_id, t_id, True)
+                return
+
+            print(f"📋 [{d_id}] {len(disponibles)}/{len(cuentas)} cuentas disponibles")
             print(f"💬 [{d_id}] {len(comentarios)} comentario(s) asignados")
 
-            # Determinar cuántas y cuáles cuentas usar
-            if not comentarios:
-                # Sin comentarios → like + compartir en TODAS las cuentas
-                indices_a_usar = list(range(total_disponibles))
-                comentarios = [""] * total_disponibles  # placeholder vacío
-                print(f"   🔇 0 comentarios → like + compartir en las {total_disponibles} cuentas")
-            elif len(comentarios) > 1:
-                n = min(len(comentarios), total_disponibles)
-                if len(comentarios) > total_disponibles:
-                    print(f"   ⚠️ {len(comentarios)} comentarios pero solo {total_disponibles} cuentas. Usando {n}.")
-                    comentarios = comentarios[:n]
-                indices_a_usar = random.sample(range(total_disponibles), n)
-                print(f"   🎲 {n} cuentas al azar (1 por comentario)")
-            else:
-                # 1 solo comentario → 1 sola cuenta, se usa una vez
-                indices_a_usar = [random.randrange(total_disponibles)]
-                print(f"   🎯 1 comentario → 1 cuenta al azar (índice {indices_a_usar[0]})")
-
-            # Ejecutar flujo: 1 cuenta = 1 comentario (emparejados por índice)
+            # Emparejar cuentas con comentarios (1 a 1)
+            n = min(len(disponibles), len(comentarios) if comentarios else len(disponibles))
             exitos = 0
             fallos = 0
-            for i, idx in enumerate(indices_a_usar):
+
+            for i in range(n):
                 if flag and flag.is_set():
                     break
-                nombre = cuentas[idx]
-                texto = comentarios[i] if i < len(comentarios) else comentarios[0]
-                print(f"\n🔁 [{d_id}] {i+1}/{len(indices_a_usar)}: '{nombre}' → \"{texto[:50]}...\"")
-                exito, _ = automator.ejecutar_flujo_completo_fb(
-                    link, texto, flag, indice_inicial=idx
-                )
-                if exito:
-                    exitos += 1
+                cuenta = disponibles[i]
+                texto = comentarios[i] if i < len(comentarios) else ""
+
+                print(f"\n🔁 [{d_id}] {i+1}/{n}: '{cuenta}'")
+                if automator.rotar_a_cuenta(cuenta, flag):
+                    exito, _ = automator.ejecutar_flujo_completo_fb(link, texto, flag)
+                    if exito:
+                        tracker.record(adb_id, cuenta, link, "like")
+                        exitos += 1
+                    else:
+                        fallos += 1
                 else:
                     fallos += 1
 
             exito_total = exitos > 0 and fallos == 0
-            print(f"\n📊 [{d_id}] Multi-flujo: {exitos} éxitos, {fallos} fallos de {len(indices_a_usar)} cuentas")
+            print(f"\n📊 [{d_id}] Multi-flujo: {exitos} éxitos, {fallos} fallos de {n} cuentas")
             self._finalizar_tarea(d_id, t_id, exito_total)
 
         except Exception as e:
@@ -249,19 +274,25 @@ class FacebookService:
             adb_id = dev.adb_id if dev else d_id
             automator = FacebookAutomator(adb_id)
 
-            # Obtener el índice actual de rotación para este dispositivo
-            if d_id not in self.contadores_rotacion:
-                self.contadores_rotacion[d_id] = 0
-            indice = self.contadores_rotacion[d_id]
+            # Obtener cuentas y filtrar disponibles
+            cuentas = automator.obtener_cuentas()
+            disponibles = [c for c in cuentas if not tracker.is_interacted(adb_id, c, link, "like")]
 
-            # Ejecuta Like + Comentario + Compartir todo en la cuenta[N]
-            # El contador avanza +1 para que la próxima ejecución use cuenta[N+1]
-            exito, siguiente_indice = automator.ejecutar_flujo_completo_fb(
-                link, comentario, flag, indice_inicial=indice
-            )
+            if not disponibles:
+                print(f"✅ [{d_id}] Todas las cuentas ya likearon este link. Saltando.")
+                self._finalizar_tarea(d_id, t_id, True)
+                return
 
-            # Guardar el siguiente índice para la próxima ejecución
-            self.contadores_rotacion[d_id] = siguiente_indice
+            # Usar la primera cuenta disponible
+            cuenta = disponibles[0]
+            print(f"🔁 [{d_id}] Usando cuenta: '{cuenta}' ({len(disponibles)} disponibles)")
+
+            if automator.rotar_a_cuenta(cuenta, flag):
+                exito, _ = automator.ejecutar_flujo_completo_fb(link, comentario, flag)
+                if exito:
+                    tracker.record(adb_id, cuenta, link, "like")
+            else:
+                exito = False
 
             self._finalizar_tarea(d_id, t_id, exito)
         except Exception as e:

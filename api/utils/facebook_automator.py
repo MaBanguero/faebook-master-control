@@ -60,6 +60,23 @@ class FacebookAutomator:
     # ROTACIÓN DE CUENTAS (reescrito para v568)
     # ═══════════════════════════════════════════════════════════════
 
+    def rotar_a_cuenta(self, nombre_cuenta: str, detener_flag=None) -> bool:
+        """
+        Rota a una cuenta específica por nombre.
+        Obtiene la lista actual de cuentas, busca el nombre exacto,
+        y rota a ese índice.
+        """
+        cuentas = self.obtener_cuentas()
+        if not cuentas:
+            print(f"   ❌ No se pudieron obtener cuentas")
+            return False
+        try:
+            idx = cuentas.index(nombre_cuenta)
+        except ValueError:
+            print(f"   ⚠️ Cuenta '{nombre_cuenta}' no encontrada en la lista actual")
+            return False
+        return self.rotar_perfil_secuencial(idx, detener_flag)
+
     def rotar_perfil_secuencial(self, indice_objetivo: int, detener_flag=None):
         """
         Cambia de cuenta usando la UI nativa de Facebook v568.
