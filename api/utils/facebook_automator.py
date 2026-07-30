@@ -610,7 +610,7 @@ class FacebookAutomator:
             'feed', 'news feed', 'noticias', 'dark mode', 'modo oscuro',
             'log out', 'cerrar sesión', 'logout', 'report', 'reportar', 'denunciar',
             'profile picture', 'profile switcher', 'dating',
-            'see more', 'notifications',
+            'see more', 'notifications', 'profile', 'ads center',
         ]
 
         cuentas = []
