@@ -118,7 +118,28 @@ class FacebookAutomator:
 
             time.sleep(3)
 
-            # --- Paso 2: Click en "cambiar de perfil" ---
+            # --- Detectar tipo de UI ---
+            # v541/v549: cuentas visibles directamente en el menú (sin sub-menú)
+            # v553/v571: requiere click en "cambiar de perfil" → sub-menú
+            xml = self.device.dump_hierarchy()
+            tiene_profile_switcher = "profile switcher" in xml.lower()
+
+            if tiene_profile_switcher:
+                # UI tipo v541/v549: cuentas visibles directo en el menú
+                cuentas_directas = self._parse_cuentas_xml(xml)
+                if cuentas_directas:
+                    indice_real = indice_objetivo % len(cuentas_directas)
+                    cuenta = cuentas_directas[indice_real]
+                    print(f"   📋 {len(cuentas_directas)} cuentas visibles: {cuentas_directas}")
+                    print(f"   👤 Seleccionando [{indice_real}] → '{cuenta}'")
+                    cuenta_xpath = f'//*[contains(@content-desc, "{cuenta}") or contains(@text, "{cuenta}")]'
+                    if self.device.xpath(cuenta_xpath).exists:
+                        self.device.xpath(cuenta_xpath).click()
+                        time.sleep(8)
+                        print(f"   ✅ Cambio exitoso: '{cuenta}' (v541/v549 directo)")
+                        return True
+
+            # --- Paso 2: Click en "cambiar de perfil" (tipo clásico) ---
             if detener_flag and detener_flag.is_set():
                 return False
 
@@ -513,7 +534,18 @@ class FacebookAutomator:
                     return []
                 time.sleep(3)
 
-                # 5. Cambiar perfil
+                # 5. Detectar tipo de UI
+                xml_menu = self.device.dump_hierarchy()
+                if "profile switcher" in xml_menu.lower():
+                    # v541/v549: cuentas visibles directo en el menú
+                    cuentas = self._parse_cuentas_xml(xml_menu)
+                    if cuentas:
+                        return cuentas
+                    elif intento < 2:
+                        continue
+                    return []
+
+                # 6. Cambiar perfil (tipo clásico v553/v571)
                 cambiar_xpaths = [
                     '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil") or contains(@content-desc, "Switch profile") or contains(@content-desc, "Switch account") or contains(@content-desc, "Change profile") or contains(@content-desc, "Change account")]',
                     '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
@@ -529,7 +561,7 @@ class FacebookAutomator:
                     return []
                 time.sleep(3)
 
-                # 6. Expandir "Ver todo" si existe
+                # 7. Expandir "Ver todo" si existe
                 lista_expandida = False
                 ver_todo_xpaths = [
                     '//*[contains(@text, "Ver todo") or contains(@content-desc, "Ver todo")]',
@@ -547,7 +579,7 @@ class FacebookAutomator:
                         self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
                         time.sleep(1)
 
-                # 7. Parsear cuentas
+                # 8. Parsear cuentas
                 xml = self.device.dump_hierarchy()
                 cuentas = self._parse_cuentas_xml(xml)
                 if cuentas:
@@ -578,6 +610,7 @@ class FacebookAutomator:
             'feed', 'news feed', 'noticias', 'dark mode', 'modo oscuro',
             'log out', 'cerrar sesión', 'logout', 'report', 'reportar', 'denunciar',
             'profile picture', 'profile switcher', 'dating',
+            'see more', 'notifications',
         ]
 
         cuentas = []
