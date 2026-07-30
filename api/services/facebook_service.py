@@ -190,10 +190,10 @@ class FacebookService:
         # Normalizar comentarios
         if isinstance(comentario, list) and len(comentario) > 0:
             comentarios = [c for c in comentario if isinstance(c, str) and c.strip()]
-        elif isinstance(comentario, str):
+        elif isinstance(comentario, str) and comentario.strip():
             comentarios = [comentario]
         else:
-            comentarios = ["Excelente contenido! 🔥"]
+            comentarios = []
 
         num_dispositivos = len(dispositivos_ids)
 
@@ -241,12 +241,10 @@ class FacebookService:
                 return
 
             print(f"📋 [{d_id}] {len(disponibles)}/{len(cuentas)} cuentas disponibles")
-            # Filtrar comentarios vacíos
-            comentarios = [c for c in (comentarios or []) if c and c.strip()]
-            print(f"💬 [{d_id}] {len(comentarios)} comentario(s) asignados")
+            print(f"💬 [{d_id}] {len(comentarios)} comentario(s) — las primeras {len(comentarios)} cuentas comentan, el resto like+share")
 
-            # Emparejar cuentas con comentarios (1 a 1). Sin comentarios = todas las cuentas.
-            n = min(len(disponibles), len(comentarios) if comentarios else len(disponibles))
+            # Siempre iterar TODAS las cuentas disponibles
+            n = len(disponibles)
             exitos = 0
             fallos = 0
 
@@ -256,7 +254,7 @@ class FacebookService:
                 cuenta = disponibles[i]
                 texto = comentarios[i] if i < len(comentarios) else ""
 
-                print(f"\n🔁 [{d_id}] {i+1}/{n}: '{cuenta}'")
+                print(f"\n🔁 [{d_id}] {i+1}/{n}: '{cuenta}'" + (f" 💬" if texto else ""))
                 if automator.rotar_a_cuenta(cuenta, flag):
                     exito, _ = automator.ejecutar_flujo_completo_fb(link, texto, flag)
                     if exito:
