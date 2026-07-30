@@ -127,7 +127,9 @@ class FacebookService:
     def _finalizar_tarea(self, d_id, t_id, exito):
         if exito:
             tareas_service.incrementar_completados(t_id)
-        dispositivo_service.actualizar_estado(d_id, DispositivoEstado.INACTIVO)
+            dispositivo_service.actualizar_estado(d_id, DispositivoEstado.INACTIVO)
+        else:
+            dispositivo_service.actualizar_estado(d_id, DispositivoEstado.ERROR)
         if d_id in self.fb_detener_flags: del self.fb_detener_flags[d_id]
         tareas_service.marcar_dispositivo_finalizado(t_id, exito=exito)
 
