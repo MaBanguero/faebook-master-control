@@ -835,5 +835,45 @@
     startPolling();
     fetchDevices().then(() => fetchTasks().then(renderDashboard));
   </script>
+
+  <!-- Log Panel (collapsible) -->
+  <div id="log-panel" style="position:fixed;bottom:0;left:0;right:0;height:200px;background:#0f172a;border-top:2px solid #334155;z-index:100;display:none;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 12px;background:#1e293b;flex-shrink:0">
+      <span style="font-size:12px;font-weight:600;color:#94a3b8">📋 Logs del Servidor</span>
+      <button onclick="toggleLogPanel()" style="background:none;border:none;color:#ef4444;font-size:18px;cursor:pointer">✕</button>
+    </div>
+    <pre id="log-content" style="flex:1;overflow-y:auto;margin:0;padding:8px 12px;font-family:monospace;font-size:11px;color:#94a3b8;line-height:1.5;white-space:pre-wrap;word-break:break-all"></pre>
+  </div>
+  <button id="log-toggle-btn" onclick="toggleLogPanel()" style="position:fixed;bottom:12px;right:12px;z-index:101;background:#1e293b;border:1px solid #334155;color:#94a3b8;padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer">📋 Logs</button>
+
+  <script>
+    let logWs = null;
+    let logVisible = false;
+    const LOG_MAX = 500;
+
+    function toggleLogPanel() {
+      logVisible = !logVisible;
+      const panel = document.getElementById('log-panel');
+      panel.style.display = logVisible ? 'flex' : 'none';
+      if (logVisible && !logWs) connectLogs();
+    }
+
+    function connectLogs() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      logWs = new WebSocket(`${proto}://${location.host}/api/ws/logs`);
+      const content = document.getElementById('log-content');
+      const lines = [];
+
+      logWs.onmessage = (evt) => {
+        if (!evt.data) return;
+        lines.push(evt.data);
+        if (lines.length > LOG_MAX) lines.shift();
+        content.textContent = lines.join('\n');
+        content.scrollTop = content.scrollHeight;
+      };
+
+      logWs.onclose = () => { logWs = null; };
+    }
+  </script>
 </body>
 </html>

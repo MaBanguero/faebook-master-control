@@ -18,6 +18,7 @@ from api.controllers import dispositivo_controller, tareas_controller, facebook_
 from api.controllers.ai_controller import router as ai_router
 from api.controllers.stream_controller import router as stream_router
 from api.controllers.connectivity_controller import router as connectivity_router
+from api.controllers.logs_controller import router as logs_router
 from api.utils.adb_custom_server import custom_adb_manager
 
 # En Ubuntu, simplemente usamos "adb". Asegúrate de tenerlo instalado: sudo apt install adb
@@ -91,6 +92,13 @@ async def startup_event():
     print("✅ Sistema listo para recibir peticiones")
     print("=" * 60)
 
+    # Iniciar LogStreamer después de que el event loop esté listo
+    from api.utils.log_streamer import log_streamer
+    import asyncio as _asyncio
+    loop = _asyncio.get_event_loop()
+    log_streamer.start(loop)
+    print("📋 Logs en tiempo real: ws://.../api/ws/logs")
+
 
 # Incluir rutas de la API
 app.include_router(dispositivo_controller.router, prefix="/api", tags=["dispositivos"])
@@ -101,6 +109,7 @@ app.include_router(instagram_controller.router, prefix="/api", tags=["instagram"
 app.include_router(ai_router, prefix="/api", tags=["ia"])
 app.include_router(stream_router, prefix="/api", tags=["streaming"])
 app.include_router(connectivity_router, prefix="/api", tags=["conectividad"])
+app.include_router(logs_router, prefix="/api", tags=["logs"])
 
 
 @app.get("/health")
