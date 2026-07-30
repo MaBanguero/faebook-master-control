@@ -1,5 +1,6 @@
 import threading
 import random
+import time
 from typing import List
 from api.services.dispositivo_service import dispositivo_service
 from api.services.tareas_service import tareas_service
@@ -265,6 +266,15 @@ class FacebookService:
                         fallos += 1
                 else:
                     fallos += 1
+
+                # Pausa cada 3 cuentas para evitar detección de Facebook
+                if (i + 1) % 3 == 0 and i + 1 < n:
+                    pausa = random.randint(120, 240)
+                    print(f"   ⏸ Pausa {pausa}s (cuenta {i+1}/{n}) para evitar detección...")
+                    for _ in range(pausa):
+                        if flag and flag.is_set():
+                            break
+                        time.sleep(1)
 
             exito_total = exitos > 0 and fallos == 0
             print(f"\n📊 [{d_id}] Multi-flujo: {exitos} éxitos, {fallos} fallos de {n} cuentas")
