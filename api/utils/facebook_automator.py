@@ -123,7 +123,7 @@ class FacebookAutomator:
                 return False
 
             cambiar_xpaths = [
-                '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil")]',
+                '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil") or contains(@content-desc, "Switch profile") or contains(@content-desc, "Switch account") or contains(@content-desc, "Change profile") or contains(@content-desc, "Change account")]',
                 '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
                 '//*[contains(@content-desc, "change profile") or contains(@content-desc, "change account")]',
             ]
@@ -384,21 +384,21 @@ class FacebookAutomator:
 
             # Selector de Compartir diferenciado para reels vs posts
             if "reel" in link.lower():
-                btn_compartir = '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share")]'
+                btn_compartir = '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share") or contains(@content-desc, "Send")]'
             else:
-                btn_compartir = '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share")]'
+                btn_compartir = '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share") or contains(@content-desc, "Send")]'
 
             # Opciones dentro del menú de compartir
-            btn_compartir_ahora = '//*[contains(@text, "Compartir ahora") or contains(@text, "Share now")]'
+            btn_compartir_ahora = '//*[contains(@text, "Compartir ahora") or contains(@text, "Share now") or contains(@text, "Share Now") or contains(@text, "SHARE NOW") or contains(@content-desc, "Compartir ahora") or contains(@content-desc, "Share now")]'
             btn_escribir_post = (
                 '//*[contains(@text, "Escribir publicación") or contains(@text, "Write post")'
                 ' or contains(@text, "Create post") or contains(@text, "Escribe algo")'
-                ' or contains(@text, "Write something") or contains(@text, "Say something")]'
+                ' or contains(@text, "Write something") or contains(@text, "Say something") or contains(@content-desc, "Escribir publicacion") or contains(@content-desc, "Write post")]'
             )
             btn_publicar_final = (
-                '//*[@text="PUBLICAR" or @text="POST" or @text="SHARE"'
+                '//*[@text="PUBLICAR" or @text="POST" or @text="SHARE" or @text="Share"'
                 ' or contains(@text, "Compartir ahora") or contains(@text, "Share now")'
-                ' or contains(@text, "Share Now")]'
+                ' or contains(@text, "Share Now") or contains(@content-desc, "Share now")]'
             )
 
             compartir_encontrado = False
@@ -515,7 +515,7 @@ class FacebookAutomator:
 
                 # 5. Cambiar perfil
                 cambiar_xpaths = [
-                    '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil")]',
+                    '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil") or contains(@content-desc, "Switch profile") or contains(@content-desc, "Switch account") or contains(@content-desc, "Change profile") or contains(@content-desc, "Change account")]',
                     '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
                     '//*[contains(@content-desc, "change profile") or contains(@content-desc, "change account")]',
                 ]
@@ -801,7 +801,7 @@ class FacebookAutomator:
                     # Compartir (muy raro)
                     print(f"[FB][{self.device_id}] 📤 Compartiendo...")
                     share_xpaths = [
-                        '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share")]',
+                        '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share") or contains(@content-desc, "Send")]',
                     ]
                     for xp in share_xpaths:
                         if self.device.xpath(xp).exists:
