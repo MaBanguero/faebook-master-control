@@ -455,7 +455,7 @@
         if (!container) return;
         container.innerHTML = devices.length === 0
           ? '<p class="text-sm text-slate-500">No hay dispositivos conectados</p>'
-          : devices.map(d => `<label><input type="checkbox" value="${d.id}" ${d.estado === 'inactivo' ? '' : 'disabled'}><span class="text-sm">${d.nombre || d.id} <span class="text-xs text-slate-500">(${d.estado})</span></span></label>`).join('');
+          : devices.map(d => `<label><input type="checkbox" value="${d.id}" ${d.estado === 'inactivo' || d.estado === 'error' ? '' : 'disabled'}><span class="text-sm">${d.nombre || d.id} <span class="text-xs text-slate-500">(${d.estado})</span></span></label>`).join('');
       });
     }
 
