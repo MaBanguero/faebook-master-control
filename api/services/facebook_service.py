@@ -259,6 +259,7 @@ class FacebookService:
                     exito, _ = automator.ejecutar_flujo_completo_fb(link, texto, flag)
                     if exito:
                         tracker.record(adb_id, cuenta, link, "like")
+                        tracker.record(adb_id, cuenta, link, "share")
                         exitos += 1
                     else:
                         fallos += 1
@@ -296,6 +297,7 @@ class FacebookService:
                 exito, _ = automator.ejecutar_flujo_completo_fb(link, comentario, flag)
                 if exito:
                     tracker.record(adb_id, cuenta, link, "like")
+                    tracker.record(adb_id, cuenta, link, "share")
             else:
                 exito = False
 
