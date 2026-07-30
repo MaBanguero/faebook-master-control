@@ -463,65 +463,104 @@ class FacebookAutomator:
         Returns:
             list[str]: nombres de cuentas disponibles, o lista vacía si falla.
         """
-        try:
-            self.device.app_stop("com.facebook.katana")
-            time.sleep(2)
-            self.device.app_start("com.facebook.katana")
-            time.sleep(8)
+        for intento in range(3):
+            try:
+                if intento > 0:
+                    print(f"   🔄 Reintento {intento+1}/3...")
+                    time.sleep(3)
 
-            # Menú
-            menu_xpaths = [
-                '//*[contains(@content-desc, "Menu") or contains(@content-desc, "Menú")]',
-                '//*[contains(@content-desc, "navigation") or contains(@content-desc, "navegación")]',
-            ]
-            for xp in menu_xpaths:
-                if self.device.xpath(xp).wait(timeout=3):
-                    self.device.xpath(xp).click()
-                    break
-            else:
-                return []
-            time.sleep(3)
+                # 0. Asegurar pantalla encendida
+                self.device.screen_on()
+                time.sleep(1)
 
-            # Cambiar perfil
-            cambiar_xpaths = [
-                '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil")]',
-                '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
-                '//*[contains(@content-desc, "change profile") or contains(@content-desc, "change account")]',
-            ]
-            for xp in cambiar_xpaths:
-                if self.device.xpath(xp).wait(timeout=2):
-                    self.device.xpath(xp).click()
-                    break
-            else:
-                return []
-            time.sleep(3)
+                # 1. Forzar cierre y reapertura de Facebook
+                self.device.app_stop("com.facebook.katana")
+                time.sleep(2)
+                self.device.app_start("com.facebook.katana")
 
-            # Expandir "Ver todo" si existe
-            lista_expandida = False
-            ver_todo_xpaths = [
-                '//*[contains(@text, "Ver todo") or contains(@content-desc, "Ver todo")]',
-                '//*[contains(@text, "See all") or contains(@content-desc, "See all")]',
-            ]
-            for xp in ver_todo_xpaths:
-                if self.device.xpath(xp).wait(timeout=5):
-                    self.device.xpath(xp).click()
-                    time.sleep(2)
-                    lista_expandida = True
-                    break
+                # 2. Esperar a que FB esté en foreground (max 15s)
+                for _ in range(30):
+                    time.sleep(0.5)
+                    try:
+                        focus = self.device.shell("dumpsys window | grep mCurrentFocus")
+                        if "com.facebook.katana" in focus:
+                            break
+                    except Exception:
+                        pass
+                time.sleep(3)
 
-            if lista_expandida:
-                for _ in range(3):
-                    self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
-                    time.sleep(1)
+                # 3. Detectar si está en pantalla de login
+                try:
+                    focus = self.device.shell("dumpsys window | grep mCurrentFocus")
+                    if "LoginActivity" in focus:
+                        print(f"   ⚠️ Facebook en pantalla de login — sin sesión iniciada")
+                        return []
+                except Exception:
+                    pass
 
-            # Parsear cuentas
-            xml = self.device.dump_hierarchy()
-            return self._parse_cuentas_xml(xml)
+                # 4. Menú
+                menu_xpaths = [
+                    '//*[contains(@content-desc, "Menu") or contains(@content-desc, "Menú")]',
+                    '//*[contains(@content-desc, "navigation") or contains(@content-desc, "navegación")]',
+                ]
+                for xp in menu_xpaths:
+                    if self.device.xpath(xp).wait(timeout=5):
+                        self.device.xpath(xp).click()
+                        break
+                else:
+                    if intento < 2:
+                        continue
+                    return []
+                time.sleep(3)
 
-        except Exception as e:
-            print(f"   ❌ Error obteniendo cuentas: {e}")
-            return []
+                # 5. Cambiar perfil
+                cambiar_xpaths = [
+                    '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil")]',
+                    '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
+                    '//*[contains(@content-desc, "change profile") or contains(@content-desc, "change account")]',
+                ]
+                for xp in cambiar_xpaths:
+                    if self.device.xpath(xp).wait(timeout=2):
+                        self.device.xpath(xp).click()
+                        break
+                else:
+                    if intento < 2:
+                        continue
+                    return []
+                time.sleep(3)
 
+                # 6. Expandir "Ver todo" si existe
+                lista_expandida = False
+                ver_todo_xpaths = [
+                    '//*[contains(@text, "Ver todo") or contains(@content-desc, "Ver todo")]',
+                    '//*[contains(@text, "See all") or contains(@content-desc, "See all")]',
+                ]
+                for xp in ver_todo_xpaths:
+                    if self.device.xpath(xp).wait(timeout=5):
+                        self.device.xpath(xp).click()
+                        time.sleep(2)
+                        lista_expandida = True
+                        break
+
+                if lista_expandida:
+                    for _ in range(3):
+                        self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
+                        time.sleep(1)
+
+                # 7. Parsear cuentas
+                xml = self.device.dump_hierarchy()
+                cuentas = self._parse_cuentas_xml(xml)
+                if cuentas:
+                    return cuentas
+                elif intento < 2:
+                    continue
+
+            except Exception as e:
+                if intento < 2:
+                    continue
+                print(f"   ❌ Error obteniendo cuentas: {e}")
+
+        return []
     def _parse_cuentas_xml(self, xml: str):
         """Parsea el XML del panel de cuentas y devuelve la lista de nombres."""
         import xml.etree.ElementTree as ET
