@@ -674,74 +674,77 @@ class FacebookAutomator:
         print(f"\n✅ [{self.device_id}] Flujo completo finalizado. Próxima cuenta: {siguiente}")
         return True, siguiente
 
+
     # ═══════════════════════════════════════════════════════════════
-    # CALENTAMIENTO DE CUENTA (ultra-random)
+    # CALENTAMIENTO DE CUENTA v2 (comportamiento humano realista)
     # ═══════════════════════════════════════════════════════════════
 
     def proceso_calentamiento(self, detener_flag=None, indice_inicial: int = 0):
         """
-        Calentamiento de cuenta Facebook ultra-random.
-        Simula navegación humana real: scroll en feed, ver Reels,
-        reacciones aleatorias, leer comentarios, compartir esporádico.
-        Sesiones de duración variable con pausas. Rota cuentas entre sesiones.
+        Calentamiento de cuenta Facebook con comportamiento humano realista.
+
+        Caracteristicas:
+          - Sesiones de 5-12min con orden de acciones aleatorio
+          - Likes en 15-30% de posts vistos
+          - Shares en 2-5% de posts
+          - 1-3 solicitudes de amistad por sesion
+          - Retencion variable en videos (40% full, 60% skip 2-6s)
+          - 20% abrir comentarios, 30% like a 1-2 comentarios
+          - Cerrar app tras sesion, descansar 15-45min
+          - Bucle infinito por cuenta hasta detener_flag
         """
         import threading
 
         def chance(pct: float) -> bool:
             return random.random() * 100 < pct
 
-        def _scroll(direction="up", scale=None):
-            s = scale or random.uniform(0.3, 0.8)
+        def _scroll(direction="up", scale=None, speed=None):
+            s = scale or random.uniform(0.2, 0.9)
+            dur = speed or random.randint(300, 900)
             try:
                 if direction == "up":
                     self.device.swipe_ext("up", scale=s)
                 elif direction == "down":
                     self.device.swipe_ext("down", scale=s)
             except Exception:
-                # Fallback para versiones sin swipe_ext
                 w, h = self.device.window_size()
                 mid_x = w // 2
                 if direction == "up":
-                    self.device.swipe(mid_x, int(h * 0.7), mid_x, int(h * 0.3), duration=0.5)
+                    self.device.swipe(mid_x, int(h * 0.75), mid_x, int(h * 0.25), duration=dur / 1000)
                 elif direction == "down":
-                    self.device.swipe(mid_x, int(h * 0.3), mid_x, int(h * 0.7), duration=0.5)
-            time.sleep(random.uniform(0.5, 2.5))
+                    self.device.swipe(mid_x, int(h * 0.25), mid_x, int(h * 0.75), duration=dur / 1000)
+            time.sleep(random.uniform(0.3, 1.5))
 
         def _go_to_feed():
-            """Va al feed principal desde cualquier pantalla."""
-            # Tab Inicio en bottom bar
             inicio_xpaths = [
-                '//*[contains(@content-desc, "Inicio, pestaña") or contains(@content-desc, "Home, tab")]',
+                '//*[contains(@content-desc, "Inicio, pesta") or contains(@content-desc, "Home, tab")]',
                 '//*[contains(@content-desc, "Inicio") or contains(@content-desc, "Home")]',
+                '//*[contains(@content-desc, "News Feed") or contains(@text, "Feed")]',
             ]
             for xp in inicio_xpaths:
-                if self.device.xpath(xp).exists:
+                if self.device.xpath(xp).wait(timeout=2):
                     self.device.xpath(xp).click()
                     time.sleep(2)
                     return True
-
-            # Fallback: back repetido
             for _ in range(4):
                 self.device.press("back")
                 time.sleep(1)
             return True
 
         def _go_to_reels():
-            """Va a la pestaña de Reels."""
             reels_xpaths = [
                 '//*[contains(@content-desc, "Reels") or contains(@content-desc, "reels")]',
-                '//*[contains(@text, "Reels") or contains(@text, "reels")]',
+                '//*[contains(@content-desc, "Video") or contains(@content-desc, "video")]',
+                '//*[contains(@text, "Reels")]',
             ]
             for xp in reels_xpaths:
-                if self.device.xpath(xp).exists:
+                if self.device.xpath(xp).wait(timeout=3):
                     self.device.xpath(xp).click()
                     time.sleep(3)
                     return True
             return False
 
         def _try_react():
-            """Intenta una reacción aleatoria (like, love, care, etc.)."""
-            # La lupa de reacciones (long press en el botón Like)
             like_xpaths = [
                 '//*[contains(@content-desc, "reacciones") or contains(@content-desc, "reactions")]',
                 '//*[contains(@content-desc, "Me gusta") or contains(@content-desc, "Like")]',
@@ -749,53 +752,137 @@ class FacebookAutomator:
             for xp in like_xpaths:
                 if self.device.xpath(xp).exists:
                     if chance(70):
-                        # Click simple = like
                         self.device.xpath(xp).click()
-                        print(f"   👍 Reacción (like)")
                     else:
-                        # Long press = menú de reacciones
                         try:
                             self.device.xpath(xp).long_click()
                             time.sleep(2)
-                            # Seleccionar una reacción random del menú
                             w, h = self.device.window_size()
-                            # Las reacciones aparecen arriba del botón
                             reactions = [
-                                (int(w * 0.25), int(h * 0.55)),  # Love
-                                (int(w * 0.40), int(h * 0.50)),  # Care
-                                (int(w * 0.55), int(h * 0.55)),  # Haha
-                                (int(w * 0.70), int(h * 0.55)),  # Wow
+                                (int(w * 0.25), int(h * 0.55)),
+                                (int(w * 0.40), int(h * 0.50)),
+                                (int(w * 0.55), int(h * 0.55)),
+                                (int(w * 0.70), int(h * 0.55)),
                             ]
                             rx, ry = random.choice(reactions)
                             self.device.click(rx, ry)
-                            print(f"   ❤️ Reacción especial")
                         except Exception:
                             self.device.xpath(xp).click()
-                    time.sleep(0.5)
+                    time.sleep(random.uniform(0.3, 1.0))
                     return True
             return False
 
-        def _scroll_comments():
-            """Abre comentarios, hace scroll, sale."""
+        def _open_comments():
             comment_xpaths = [
                 '//*[contains(@content-desc, "comentario") or contains(@content-desc, "comment")]',
+                '//*[contains(@content-desc, "Comentar") or contains(@content-desc, "Comment")]',
                 '//*[contains(@text, "Comentar") or contains(@text, "Comment")]',
             ]
             for xp in comment_xpaths:
                 if self.device.xpath(xp).exists:
                     self.device.xpath(xp).click()
-                    time.sleep(3)
-                    # Scroll en comentarios
-                    for _ in range(random.randint(1, 4)):
-                        _scroll("up", scale=0.7)
-                        time.sleep(random.uniform(0.5, 2))
-                    self.device.press("back")
-                    time.sleep(1)
+                    time.sleep(2)
                     return True
             return False
 
+        def _like_random_comments():
+            # Buscar botones de like en comentarios (iconos pequenos)
+            like_icon_xpaths = [
+                '//*[contains(@content-desc, "Me gusta") or contains(@content-desc, "Like")]',
+                '//*[contains(@content-desc, "reacciones") or contains(@content-desc, "reactions")]',
+            ]
+            liked = 0
+            for xp in like_icon_xpaths:
+                elements = self.device.xpath(xp).all()
+                for el in elements[:3]:  # max 3 intentos
+                    try:
+                        el.click()
+                        liked += 1
+                        time.sleep(random.uniform(0.5, 1.5))
+                        if liked >= random.randint(1, 2):
+                            break
+                    except Exception:
+                        pass
+                if liked > 0:
+                    break
+            return liked
+
+        def _try_share():
+            share_xpaths = [
+                '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share") or contains(@content-desc, "Send")]',
+            ]
+            for xp in share_xpaths:
+                if self.device.xpath(xp).exists:
+                    self.device.xpath(xp).click()
+                    time.sleep(3)
+                    ahora_xp = '//*[contains(@text, "Compartir ahora") or contains(@text, "Share now") or contains(@text, "Share Now") or contains(@text, "SHARE NOW")]'
+                    if self.device.xpath(ahora_xp).exists:
+                        self.device.xpath(ahora_xp).click()
+                        time.sleep(2)
+                        return True
+                    else:
+                        self.device.press("back")
+                        time.sleep(1)
+                    break
+            return False
+
+        def _send_friend_requests(count=0):
+            if count == 0:
+                count = random.randint(1, 3)
+
+            sent = 0
+            # Ir a la pestana de amigos
+            friends_xpaths = [
+                '//*[contains(@content-desc, "Amigos") or contains(@content-desc, "Friends")]',
+                '//*[contains(@content-desc, "Solicitudes") or contains(@content-desc, "Friend requests")]',
+            ]
+            for xp in friends_xpaths:
+                if self.device.xpath(xp).wait(timeout=3):
+                    self.device.xpath(xp).click()
+                    time.sleep(3)
+                    break
+            else:
+                # Ir via menu
+                _go_to_feed()
+                time.sleep(2)
+                # Buscar "People you may know" en el feed
+                pass
+
+            # Buscar botones "Agregar" o "Add Friend"
+            for _ in range(count * 2):
+                add_xpaths = [
+                    '//*[contains(@text, "Agregar") or contains(@text, "Add Friend") or contains(@text, "Add friend")]',
+                    '//*[contains(@content-desc, "Agregar") or contains(@content-desc, "Add Friend")]',
+                ]
+                found = False
+                for xp in add_xpaths:
+                    elements = self.device.xpath(xp).all()
+                    for el in elements:
+                        try:
+                            el.click()
+                            sent += 1
+                            found = True
+                            time.sleep(random.uniform(2, 5))
+                            if sent >= count:
+                                break
+                        except Exception:
+                            pass
+                    if sent >= count:
+                        break
+                if sent >= count:
+                    break
+                if not found:
+                    _scroll("up", scale=0.5)
+                    time.sleep(random.uniform(1, 3))
+
+            if sent > 0:
+                print(f"   👥 {sent} solicitud(es) de amistad enviadas")
+            _go_to_feed()
+            return sent
+
+        # ── BROWSING METHODS ───────────────────────────────────
+
         def _browse_feed(minutos=8):
-            """Navega el feed principal como un humano."""
             print(f"[FB][{self.device_id}] 📰 Navegando Feed ~{minutos}min...")
             self.device.app_stop("com.facebook.katana")
             time.sleep(2)
@@ -805,6 +892,7 @@ class FacebookAutomator:
 
             deadline = time.time() + (minutos * 60)
             posts_vistos = 0
+            shares = 0
 
             while time.time() < deadline:
                 if detener_flag and detener_flag.is_set():
@@ -812,79 +900,75 @@ class FacebookAutomator:
 
                 roll = random.randint(1, 100)
 
-                if roll <= 65:
-                    # Scroll normal leyendo
-                    wait = random.randint(2, 12)
+                if roll <= 55:  # Scroll normal + espera (simula lectura)
+                    wait = random.uniform(3, 15)
                     time.sleep(wait)
+                    _scroll("up", speed=random.randint(400, 900))
+                    posts_vistos += 1
+
+                elif roll <= 75:  # Scroll + like (15-30% efectivo sobre posts scrolleados)
+                    wait = random.uniform(2, 8)
+                    time.sleep(wait)
+                    if chance(70):  # 70% de los que paran, likean
+                        _try_react()
                     _scroll("up")
                     posts_vistos += 1
 
-                elif roll <= 80:
-                    # Reaccionar al post actual
-                    _try_react()
-                    time.sleep(random.randint(1, 3))
+                elif roll <= 82:  # Abrir comentarios (20% de posts)
+                    if _open_comments():
+                        # Scroll en comentarios 5-15s
+                        scroll_time = random.uniform(5, 15)
+                        t0 = time.time()
+                        while time.time() - t0 < scroll_time:
+                            _scroll("up", scale=0.3, speed=600)
+                            time.sleep(random.uniform(0.5, 2))
+                        # 30% like a comentarios
+                        if chance(30):
+                            liked = _like_random_comments()
+                            if liked:
+                                print(f"   💬 Like a {liked} comentario(s)")
+                        self.device.press("back")
+                        time.sleep(1)
+                    _scroll("up")
+                    posts_vistos += 1
+
+                elif roll <= 87:  # Share (2-5%)
+                    if _try_share():
+                        shares += 1
+                        print(f"   📤 Compartido (#{shares})")
                     _scroll("up")
 
-                elif roll <= 90:
-                    # Abrir comentarios y leer
-                    _scroll_comments()
-                    _scroll("up")
-
-                elif roll <= 95:
-                    # Compartir (muy raro)
-                    print(f"[FB][{self.device_id}] 📤 Compartiendo...")
-                    share_xpaths = [
-                        '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share") or contains(@content-desc, "Send")]',
-                    ]
-                    for xp in share_xpaths:
-                        if self.device.xpath(xp).exists:
-                            self.device.xpath(xp).click()
-                            time.sleep(3)
-                            # Click en "Compartir ahora" si existe
-                            ahora_xp = '//*[contains(@text, "Compartir ahora") or contains(@text, "Share now")]'
-                            if self.device.xpath(ahora_xp).exists:
-                                self.device.xpath(ahora_xp).click()
-                                time.sleep(2)
-                            else:
-                                self.device.press("back")
-                            break
-                    _scroll("up")
-
-                elif roll <= 98:
-                    # Pausa humana (contenido interesante)
+                elif roll <= 92:  # Pausa humana
                     pause = random.randint(8, 30)
-                    print(f"[FB][{self.device_id}] Pausa {pause}s...")
                     time.sleep(pause)
 
-                else:
-                    # Scroll back (se arrepintió, volvió a ver)
-                    _scroll("down", scale=0.4)
-                    time.sleep(3)
-                    _try_react()
+                elif roll <= 97:  # Scroll back + react
+                    _scroll("down", scale=0.3)
+                    time.sleep(random.uniform(1, 3))
+                    if chance(60):
+                        _try_react()
+
+                else:  # Ver notificaciones + volver
+                    notif_xp = '//*[contains(@content-desc, "Notificaciones") or contains(@content-desc, "Notifications")]'
+                    if self.device.xpath(notif_xp).exists:
+                        self.device.xpath(notif_xp).click()
+                        time.sleep(random.randint(3, 8))
+                        for _ in range(random.randint(1, 3)):
+                            _scroll("up", scale=0.4)
+                        self.device.press("back")
+                        time.sleep(2)
 
                 # Mini-descanso cada varios posts
                 if posts_vistos > 0 and posts_vistos % random.randint(8, 15) == 0:
                     p = random.randint(10, 60)
-                    print(f"[FB][{self.device_id}] Mini-descanso {p}s...")
                     time.sleep(p)
 
-                # ~15% abrir notificaciones y volver
-                if chance(15):
-                    notif_xpath = '//*[contains(@content-desc, "Notificaciones") or contains(@content-desc, "Notifications")]'
-                    if self.device.xpath(notif_xpath).exists:
-                        self.device.xpath(notif_xpath).click()
-                        time.sleep(random.randint(3, 8))
-                        self.device.press("back")
-                        time.sleep(2)
+            return posts_vistos, shares
 
-            return posts_vistos
-
-        def _browse_reels(minutos=8):
-            """Navega Reels de Facebook."""
+        def _browse_reels(minutos=5):
             print(f"[FB][{self.device_id}] 🎬 Navegando Reels ~{minutos}min...")
             if not _go_to_reels():
-                print(f"[FB][{self.device_id}] Reels tab no encontrada, siguiendo en feed")
-                return
+                return 0
 
             time.sleep(3)
             deadline = time.time() + (minutos * 60)
@@ -894,17 +978,26 @@ class FacebookAutomator:
                 if detener_flag and detener_flag.is_set():
                     break
 
-                # Mirar reel actual
-                watch = random.randint(3, 30)
+                # 40%: ver reel completo, 60%: skip rapido
+                if chance(40):
+                    watch = random.randint(15, 60)  # reel completo
+                else:
+                    watch = random.randint(2, 6)  # skip rapido
+
                 time.sleep(watch)
 
-                # ~30% reaccionar
-                if chance(30):
+                # 25% reaccionar
+                if chance(25):
                     _try_react()
 
-                # ~15% ver comentarios
-                if chance(15):
-                    _scroll_comments()
+                # 10% abrir comentarios en reels
+                if chance(10):
+                    if _open_comments():
+                        time.sleep(random.uniform(3, 8))
+                        if chance(30):
+                            _like_random_comments()
+                        self.device.press("back")
+                        time.sleep(1)
 
                 # Siguiente reel
                 try:
@@ -916,45 +1009,59 @@ class FacebookAutomator:
                 reels_vistos += 1
 
                 if reels_vistos % random.randint(8, 15) == 0:
-                    p = random.randint(15, 45)
-                    print(f"[FB][{self.device_id}] Pausa entre reels {p}s...")
+                    p = random.randint(10, 30)
                     time.sleep(p)
 
             return reels_vistos
 
-        # ── FLUJO PRINCIPAL ──
-        session_seconds = random.randint(5 * 60, 40 * 60)
-        break_seconds = random.randint(5 * 60, 50 * 60)
+        # ── MAIN LOOP ──────────────────────────────────────────
 
-        print(f"[FB][{self.device_id}] 🔥 CALENTAMIENTO FB: {session_seconds // 60}min sesión, {break_seconds // 60}min descanso")
-        print(f"[FB][{self.device_id}] Cuenta inicial: índice {indice_inicial}")
+        session_min = random.randint(5, 12)
+        break_min = random.randint(15, 45)
 
-        # Rotar a la cuenta inicial
-        self.rotar_perfil_secuencial(indice_inicial, detener_flag)
+        print(f"[FB][{self.device_id}] 🔥 CALENTAMIENTO v2: sesion={session_min}min, descanso={break_min}min")
 
-        try:
-            # Armar plan de actividades random para esta sesión
+        # Rotar a cuenta inicial
+        if indice_inicial >= 0:
+            self.rotar_perfil_secuencial(indice_inicial, detener_flag)
+
+        cuenta_actual = indice_inicial
+
+        # BUCLE INFINITO DE SESIONES
+        while True:
+            if detener_flag and detener_flag.is_set():
+                break
+
+            # Construir plan aleatorio para esta sesion
             actividades = []
 
-            # Siempre feed como base
-            actividades.append(("feed", random.randint(3, 12)))
+            # Siempre feed
+            feed_min = random.randint(3, 8)
+            actividades.append(("feed", feed_min))
 
-            # ~65% agregar Reels
-            if chance(65):
-                actividades.append(("reels", random.randint(2, 8)))
+            # ~70% reels
+            if chance(70):
+                actividades.append(("reels", random.randint(2, 5)))
 
-            # ~20% volver al feed después de reels
-            if chance(20):
-                actividades.append(("feed", random.randint(2, 6)))
+            # ~50% mas feed despues de reels
+            if chance(50):
+                actividades.append(("feed", random.randint(1, 4)))
 
-            # ~30% revisar notificaciones
-            if chance(30):
+            # Friend requests (1-3 por sesion)
+            actividades.append(("friends", 0))
+
+            # Notificaciones al inicio o final
+            if chance(40):
+                actividades.insert(0, ("notifications", 0))
+            else:
                 actividades.append(("notifications", 0))
 
-            random.shuffle(actividades)
-            print(f"[FB][{self.device_id}] Plan: {[f'{a}({m}m)' for a, m in actividades]}")
+            random.shuffle([a for a in actividades if a[0] not in ("friends", "notifications")])
 
-            session_end = time.time() + session_seconds
+            print(f"[FB][{self.device_id}] Plan sesion: {[(a, m) for a, m in actividades]}")
+
+            session_end = time.time() + (session_min * 60)
+
             for actividad, minutos in actividades:
                 if time.time() >= session_end:
                     break
@@ -964,40 +1071,55 @@ class FacebookAutomator:
                 remaining = max(1, int((session_end - time.time()) / 60))
 
                 if actividad == "feed":
-                    duracion = min(minutos, remaining)
-                    if duracion > 0:
-                        _browse_feed(duracion)
+                    dur = min(minutos, remaining)
+                    if dur > 0:
+                        _browse_feed(dur)
                 elif actividad == "reels":
-                    duracion = min(minutos, remaining)
-                    if duracion > 0:
-                        _browse_reels(duracion)
+                    dur = min(minutos, remaining)
+                    if dur > 0:
+                        _browse_reels(dur)
+                elif actividad == "friends":
+                    _send_friend_requests()
                 elif actividad == "notifications":
                     notif_xp = '//*[contains(@content-desc, "Notificaciones") or contains(@content-desc, "Notifications")]'
                     if self.device.xpath(notif_xp).exists:
                         self.device.xpath(notif_xp).click()
-                        time.sleep(random.randint(5, 15))
-                        for _ in range(random.randint(1, 3)):
-                            _scroll("up")
+                        time.sleep(random.randint(3, 10))
+                        for _ in range(random.randint(1, 4)):
+                            _scroll("up", scale=0.4)
                         self.device.press("back")
                         time.sleep(2)
 
-            print(f"[FB][{self.device_id}] ✅ Calentamiento FB completado")
-
-        except Exception as e:
-            print(f"[FB][{self.device_id}] ❌ Error calentamiento FB: {e}")
-            raise
-        finally:
+            # CERRAR APP y DESCANSAR
+            print(f"[FB][{self.device_id}] 😴 Cerrando app. Descanso {break_min}min...")
             self.cerrar_facebook()
+            time.sleep(5)  # asegurar cierre
 
-            # Descanso
-            if not (detener_flag and detener_flag.is_set()):
-                print(f"[FB][{self.device_id}] 😴 Descanso {break_seconds // 60}min...")
-                break_end = time.time() + break_seconds
-                while time.time() < break_end:
-                    if detener_flag and detener_flag.is_set():
-                        break
-                    time.sleep(min(30, break_end - time.time()))
+            # Descanso real (app cerrada)
+            if detener_flag and detener_flag.is_set():
+                break
 
-        siguiente = indice_inicial + 1
-        print(f"[FB][{self.device_id}] Próxima cuenta: índice {siguiente}")
-        return siguiente
+            break_end = time.time() + (break_min * 60)
+            while time.time() < break_end:
+                if detener_flag and detener_flag.is_set():
+                    break
+                time.sleep(min(30, break_end - time.time()))
+
+            if detener_flag and detener_flag.is_set():
+                break
+
+            # Rotar a siguiente cuenta
+            cuenta_actual += 1
+            print(f"[FB][{self.device_id}] Nueva sesion: cuenta indice {cuenta_actual}")
+            try:
+                self.rotar_perfil_secuencial(cuenta_actual, detener_flag)
+            except Exception as e:
+                print(f"[FB][{self.device_id}] Error rotando cuenta: {e}")
+
+            # Re-randomizar duraciones para esta sesion
+            session_min = random.randint(5, 12)
+            break_min = random.randint(15, 45)
+
+        print(f"[FB][{self.device_id}] Calentamiento detenido")
+        return cuenta_actual + 1
+
