@@ -459,7 +459,6 @@ class FacebookAutomator:
         """
         Navega al panel de cuentas y devuelve la lista de nombres de perfiles
         disponibles, sin cambiar de cuenta.
-        Soporta Facebook v460 (menú clásico) y v541+ (cuentas visibles).
 
         Returns:
             list[str]: nombres de cuentas disponibles, o lista vacía si falla.
@@ -483,24 +482,22 @@ class FacebookAutomator:
                 return []
             time.sleep(3)
 
-            # Intentar abrir el switcher de perfiles (solo v460 clásico)
+            # Cambiar perfil
             cambiar_xpaths = [
                 '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil")]',
                 '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
                 '//*[contains(@content-desc, "change profile") or contains(@content-desc, "change account")]',
-                '//*[contains(@content-desc, "See more") or contains(@text, "See more")]',
             ]
             for xp in cambiar_xpaths:
                 if self.device.xpath(xp).wait(timeout=2):
                     self.device.xpath(xp).click()
                     break
             else:
-                # v541+: cuentas visibles directamente en el menú, sin sub-menú
-                xml = self.device.dump_hierarchy()
-                return self._parse_cuentas_xml(xml)
+                return []
             time.sleep(3)
 
             # Expandir "Ver todo" si existe
+            lista_expandida = False
             ver_todo_xpaths = [
                 '//*[contains(@text, "Ver todo") or contains(@content-desc, "Ver todo")]',
                 '//*[contains(@text, "See all") or contains(@content-desc, "See all")]',
@@ -509,10 +506,13 @@ class FacebookAutomator:
                 if self.device.xpath(xp).wait(timeout=5):
                     self.device.xpath(xp).click()
                     time.sleep(2)
-                    for _ in range(3):
-                        self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
-                        time.sleep(1)
+                    lista_expandida = True
                     break
+
+            if lista_expandida:
+                for _ in range(3):
+                    self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
+                    time.sleep(1)
 
             # Parsear cuentas
             xml = self.device.dump_hierarchy()
