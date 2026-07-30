@@ -92,10 +92,12 @@ async def startup_event():
     print("✅ Sistema listo para recibir peticiones")
     print("=" * 60)
 
-    # Iniciar LogStreamer después de que el event loop esté listo
+
+@app.on_event("startup")
+async def startup_log_streamer():
     from api.utils.log_streamer import log_streamer
     import asyncio as _asyncio
-    loop = _asyncio.get_event_loop()
+    loop = _asyncio.get_running_loop()
     log_streamer.start(loop)
     print("📋 Logs en tiempo real: ws://.../api/ws/logs")
 
