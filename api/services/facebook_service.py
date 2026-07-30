@@ -241,9 +241,11 @@ class FacebookService:
                 return
 
             print(f"📋 [{d_id}] {len(disponibles)}/{len(cuentas)} cuentas disponibles")
+            # Filtrar comentarios vacíos
+            comentarios = [c for c in (comentarios or []) if c and c.strip()]
             print(f"💬 [{d_id}] {len(comentarios)} comentario(s) asignados")
 
-            # Emparejar cuentas con comentarios (1 a 1)
+            # Emparejar cuentas con comentarios (1 a 1). Sin comentarios = todas las cuentas.
             n = min(len(disponibles), len(comentarios) if comentarios else len(disponibles))
             exitos = 0
             fallos = 0
