@@ -85,157 +85,181 @@ class FacebookAutomator:
           1. Abrir menú hamburguesa → @content-desc="Menú"
           2. Click en "cambiar de perfil" → contains(@content-desc, "cambiar de perfil")
           3. Seleccionar cuenta por índice en la lista de perfiles
+
+        Tolerancia: 3 intentos totales — internet lento puede causar que los perfiles
+        no aparezcan en el primer intento.
         """
-        try:
-            print(f"🔄 [{self.device_id}] Rotando cuenta (índice objetivo: {indice_objetivo})...")
+        for intento_global in range(3):
+            if intento_global > 0:
+                print(f"   🔄 [{self.device_id}] Reintento {intento_global+1}/3 por perfiles no cargados...")
+                time.sleep(3)
 
-            # Paso 0: Reiniciar la app para estado limpio
-            self.device.app_stop("com.facebook.katana")
-            time.sleep(2)
-            self.device.app_start("com.facebook.katana")
-            time.sleep(8)
+            try:
+                print(f"🔄 [{self.device_id}] Rotando cuenta (índice objetivo: {indice_objetivo})...")
 
-            # --- Paso 1: Abrir menú hamburguesa ---
-            if detener_flag and detener_flag.is_set():
-                return False
-
-            # "Menu"(EN) y "Menú"(ES) tienen caracteres distintos (u vs ú) → ambos explícitos
-            menu_xpaths = [
-                '//*[contains(@content-desc, "Menu") or contains(@content-desc, "Menú")]',
-                '//*[contains(@content-desc, "navigation") or contains(@content-desc, "navegación")]',
-            ]
-            menu_abierto = False
-            for xp in menu_xpaths:
-                if self.device.xpath(xp).wait(timeout=3):
-                    self.device.xpath(xp).click()
-                    menu_abierto = True
-                    print(f"   ✅ Menú abierto")
-                    break
-
-            if not menu_abierto:
-                print(f"   ❌ No se encontró el botón de menú")
-                return False
-
-            time.sleep(3)
-
-            # --- Detectar tipo de UI ---
-            # v541/v549: cuentas visibles directamente en el menú (sin sub-menú)
-            # v553/v571: requiere click en "cambiar de perfil" → sub-menú
-            xml = self.device.dump_hierarchy()
-            tiene_profile_switcher = "profile switcher" in xml.lower()
-
-            if tiene_profile_switcher:
-                # UI tipo v541/v549: cuentas visibles directo en el menú
-                cuentas_directas = self._parse_cuentas_xml(xml)
-                if cuentas_directas:
-                    indice_real = indice_objetivo % len(cuentas_directas)
-                    cuenta = cuentas_directas[indice_real]
-                    print(f"   📋 {len(cuentas_directas)} cuentas visibles: {cuentas_directas}")
-                    print(f"   👤 Seleccionando [{indice_real}] → '{cuenta}'")
-                    cuenta_xpath = f'//*[contains(@content-desc, "{cuenta}") or contains(@text, "{cuenta}")]'
-                    if self.device.xpath(cuenta_xpath).exists:
-                        self.device.xpath(cuenta_xpath).click()
-                        time.sleep(8)
-                        print(f"   ✅ Cambio exitoso: '{cuenta}' (v541/v549 directo)")
-                        return True
-
-            # --- Paso 2: Click en "cambiar de perfil" (tipo clásico) ---
-            if detener_flag and detener_flag.is_set():
-                return False
-
-            cambiar_xpaths = [
-                '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil") or contains(@content-desc, "Switch profile") or contains(@content-desc, "Switch account") or contains(@content-desc, "Change profile") or contains(@content-desc, "Change account")]',
-                '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
-                '//*[contains(@content-desc, "change profile") or contains(@content-desc, "change account")]',
-            ]
-            cambiar_abierto = False
-            for xp in cambiar_xpaths:
-                if self.device.xpath(xp).wait(timeout=2):
-                    self.device.xpath(xp).click()
-                    cambiar_abierto = True
-                    print(f"   ✅ Panel de cuentas abierto")
-                    break
-
-            if not cambiar_abierto:
-                print(f"   ❌ No se encontró 'cambiar de perfil'")
-                return False
-
-            time.sleep(3)
-
-            # --- Expandir lista si hay "Ver todo" ---
-            # Facebook limita la vista inicial a ~5 cuentas cuando hay muchas;
-            # si no aparece "Ver todo", todas las cuentas ya están visibles.
-            lista_expandida = False
-            ver_todo_xpaths = [
-                '//*[contains(@text, "Ver todo") or contains(@content-desc, "Ver todo")]',
-                '//*[contains(@text, "See all") or contains(@content-desc, "See all")]',
-            ]
-            for xp in ver_todo_xpaths:
-                if self.device.xpath(xp).wait(timeout=5):
-                    self.device.xpath(xp).click()
-                    print(f"   📋 Lista expandida (clic en 'Ver todo')")
-                    time.sleep(2)
-                    lista_expandida = True
-                    break
-
-            # Solo hacer scroll si expandimos — si no, todas las cuentas ya están visibles
-            if lista_expandida:
-                for _ in range(3):
-                    self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
-                    time.sleep(1)
-
-            # --- Paso 3: Seleccionar cuenta por índice ---
-            if detener_flag and detener_flag.is_set():
-                return False
-
-            # Dumpear la jerarquía COMPLETA después de expandir
-            xml = self.device.dump_hierarchy()
-            cuentas = self._parse_cuentas_xml(xml)
-
-            if not cuentas:
-                print(f"   ❌ No se detectaron cuentas en la lista")
-                return False
-
-            print(f"   📋 {len(cuentas)} cuentas disponibles: {cuentas}")
-
-            # Seleccionar por índice (cíclico)
-            indice_real = indice_objetivo % len(cuentas)
-            cuenta_seleccionada = cuentas[indice_real]
-            print(f"   👤 Seleccionando [{indice_real}] → '{cuenta_seleccionada}'")
-
-            # Click en la cuenta por su texto/content-desc (usar contains para robustez)
-            cuenta_xpath = f'//*[contains(@content-desc, "{cuenta_seleccionada}") or contains(@text, "{cuenta_seleccionada}")]'
-            if self.device.xpath(cuenta_xpath).exists:
-                self.device.xpath(cuenta_xpath).click()
+                # Paso 0: Reiniciar la app para estado limpio
+                self.device.app_stop("com.facebook.katana")
+                time.sleep(2)
+                self.device.app_start("com.facebook.katana")
                 time.sleep(8)
-                print(f"   ✅ Cambio exitoso: '{cuenta_seleccionada}'")
-                return True
-            else:
-                # Último recurso: click por coordenadas del elemento encontrado
-                import xml.etree.ElementTree as ET
-                root = ET.fromstring(xml)
-                for el in root.iter():
-                    d = el.attrib.get('content-desc', '')
-                    t = el.attrib.get('text', '')
-                    if d == cuenta_seleccionada or t == cuenta_seleccionada:
-                        bounds_str = el.attrib.get('bounds', '')
-                        try:
-                            parts = bounds_str.replace('[', ',').replace(']', ',').split(',')
-                            x = (int(parts[0]) + int(parts[2])) // 2
-                            y = (int(parts[1]) + int(parts[3])) // 2
-                            self.device.click(x, y)
-                            time.sleep(8)
-                            print(f"   ✅ Cambio exitoso (click por coordenadas): '{cuenta_seleccionada}'")
-                            return True
-                        except (ValueError, IndexError):
-                            pass
 
-                print(f"   ❌ No se pudo clickear '{cuenta_seleccionada}'")
+                # --- Paso 1: Abrir menú hamburguesa ---
+                if detener_flag and detener_flag.is_set():
+                    return False
+
+                # "Menu"(EN)/"Menú"(ES)/"menu"(v539 lowercase) — todos explícitos
+                menu_xpaths = [
+                    '//*[contains(@content-desc, "Menu") or contains(@content-desc, "Menú") or contains(@content-desc, "menu")]',
+                    '//*[contains(@content-desc, "navigation") or contains(@content-desc, "navegación")]',
+                ]
+                menu_abierto = False
+                for xp in menu_xpaths:
+                    if self.device.xpath(xp).wait(timeout=3):
+                        self.device.xpath(xp).click()
+                        menu_abierto = True
+                        print(f"   ✅ Menú abierto")
+                        break
+
+                if not menu_abierto:
+                    print(f"   ❌ No se encontró el botón de menú")
+                    if intento_global < 2:
+                        continue
+                    return False
+
+                time.sleep(3)
+
+                # --- Detectar tipo de UI ---
+                # v541/v549: cuentas visibles directamente en el menú (sin sub-menú)
+                # v553/v571: requiere click en "cambiar de perfil" → sub-menú
+                xml = self.device.dump_hierarchy()
+                tiene_profile_switcher = "profile switcher" in xml.lower()
+
+                if tiene_profile_switcher:
+                    # UI tipo v541/v549: cuentas visibles directo en el menú
+                    cuentas_directas = self._parse_cuentas_xml(xml)
+                    if cuentas_directas:
+                        indice_real = indice_objetivo % len(cuentas_directas)
+                        cuenta = cuentas_directas[indice_real]
+                        print(f"   📋 {len(cuentas_directas)} cuentas visibles: {cuentas_directas}")
+                        print(f"   👤 Seleccionando [{indice_real}] → '{cuenta}'")
+                        cuenta_xpath = f'//*[contains(@content-desc, "{cuenta}") or contains(@text, "{cuenta}")]'
+                        if self.device.xpath(cuenta_xpath).exists:
+                            self.device.xpath(cuenta_xpath).click()
+                            time.sleep(8)
+                            print(f"   ✅ Cambio exitoso: '{cuenta}' (v541/v549 directo)")
+                            return True
+                    # Si profile_switcher estaba pero parse falló → reintentar
+                    if intento_global < 2:
+                        continue
+                    return False
+
+                # --- Paso 2: Click en "cambiar de perfil" (tipo clásico) ---
+                if detener_flag and detener_flag.is_set():
+                    return False
+
+                cambiar_xpaths = [
+                    '//*[contains(@content-desc, "cambiar de perfil") or contains(@content-desc, "cambiar perfil") or contains(@content-desc, "Switch profile") or contains(@content-desc, "Switch account") or contains(@content-desc, "Change profile") or contains(@content-desc, "Change account")]',
+                    '//*[contains(@content-desc, "switch profile") or contains(@content-desc, "switch account")]',
+                    '//*[contains(@content-desc, "change profile") or contains(@content-desc, "change account")]',
+                ]
+                cambiar_abierto = False
+                for xp in cambiar_xpaths:
+                    if self.device.xpath(xp).wait(timeout=2):
+                        self.device.xpath(xp).click()
+                        cambiar_abierto = True
+                        print(f"   ✅ Panel de cuentas abierto")
+                        break
+
+                if not cambiar_abierto:
+                    print(f"   ❌ No se encontró 'cambiar de perfil' (intento {intento_global+1}/3)")
+                    if intento_global < 2:
+                        continue
+                    return False
+
+                time.sleep(3)
+
+                # --- Expandir lista si hay "Ver todo" ---
+                # Facebook limita la vista inicial a ~5 cuentas cuando hay muchas;
+                # si no aparece "Ver todo", todas las cuentas ya están visibles.
+                lista_expandida = False
+                ver_todo_xpaths = [
+                    '//*[contains(@text, "Ver todo") or contains(@content-desc, "Ver todo")]',
+                    '//*[contains(@text, "See all") or contains(@content-desc, "See all")]',
+                ]
+                for xp in ver_todo_xpaths:
+                    if self.device.xpath(xp).wait(timeout=5):
+                        self.device.xpath(xp).click()
+                        print(f"   📋 Lista expandida (clic en 'Ver todo')")
+                        time.sleep(2)
+                        lista_expandida = True
+                        break
+
+                # Solo hacer scroll si expandimos — si no, todas las cuentas ya están visibles
+                if lista_expandida:
+                    for _ in range(3):
+                        self.device.swipe(0.5, 0.8, 0.5, 0.3, duration=0.4)
+                        time.sleep(1)
+
+                # --- Paso 3: Seleccionar cuenta por índice ---
+                if detener_flag and detener_flag.is_set():
+                    return False
+
+                # Dumpear la jerarquía COMPLETA después de expandir
+                xml = self.device.dump_hierarchy()
+                cuentas = self._parse_cuentas_xml(xml)
+
+                if not cuentas:
+                    print(f"   ❌ No se detectaron cuentas en la lista (intento {intento_global+1}/3)")
+                    if intento_global < 2:
+                        continue
+                    return False
+
+                print(f"   📋 {len(cuentas)} cuentas disponibles: {cuentas}")
+
+                # Seleccionar por índice (cíclico)
+                indice_real = indice_objetivo % len(cuentas)
+                cuenta_seleccionada = cuentas[indice_real]
+                print(f"   👤 Seleccionando [{indice_real}] → '{cuenta_seleccionada}'")
+
+                # Click en la cuenta por su texto/content-desc (usar contains para robustez)
+                cuenta_xpath = f'//*[contains(@content-desc, "{cuenta_seleccionada}") or contains(@text, "{cuenta_seleccionada}")]'
+                if self.device.xpath(cuenta_xpath).exists:
+                    self.device.xpath(cuenta_xpath).click()
+                    time.sleep(8)
+                    print(f"   ✅ Cambio exitoso: '{cuenta_seleccionada}'")
+                    return True
+                else:
+                    # Último recurso: click por coordenadas del elemento encontrado
+                    import xml.etree.ElementTree as ET
+                    root = ET.fromstring(xml)
+                    for el in root.iter():
+                        d = el.attrib.get('content-desc', '')
+                        t = el.attrib.get('text', '')
+                        if d == cuenta_seleccionada or t == cuenta_seleccionada:
+                            bounds_str = el.attrib.get('bounds', '')
+                            try:
+                                parts = bounds_str.replace('[', ',').replace(']', ',').split(',')
+                                x = (int(parts[0]) + int(parts[2])) // 2
+                                y = (int(parts[1]) + int(parts[3])) // 2
+                                self.device.click(x, y)
+                                time.sleep(8)
+                                print(f"   ✅ Cambio exitoso (click por coordenadas): '{cuenta_seleccionada}'")
+                                return True
+                            except (ValueError, IndexError):
+                                pass
+
+                    print(f"   ❌ No se pudo clickear '{cuenta_seleccionada}' (intento {intento_global+1}/3)")
+                    if intento_global < 2:
+                        continue
+                    return False
+
+            except Exception as e:
+                print(f"   ❌ Error en rotación de cuenta (intento {intento_global+1}/3): {e}")
+                if intento_global < 2:
+                    continue
                 return False
 
-        except Exception as e:
-            print(f"   ❌ Error en rotación de cuenta: {e}")
-            return False
+        return False
 
     # ═══════════════════════════════════════════════════════════════
     # LIKE (selectores limpiados para v568)
@@ -510,18 +534,29 @@ class FacebookAutomator:
                         pass
                 time.sleep(3)
 
-                # 3. Detectar si está en pantalla de login
+                # 3. Detectar si está en pantalla de login (basado en UI, no en dumpsys)
+                #    dumpsys window mCurrentFocus puede reportar LoginActivity
+                #    brevemente durante el arranque incluso con sesión activa.
                 try:
-                    focus = self.device.shell("dumpsys window | grep mCurrentFocus")
-                    if "LoginActivity" in focus:
-                        print(f"   ⚠️ Facebook en pantalla de login — sin sesión iniciada")
+                    xml_check = self.device.dump_hierarchy()
+                    login_keywords = ['Log in', 'Iniciar sesión', 'Create account', 'Crear cuenta',
+                                      'Sign up', 'Registrarte', 'Forgot password', 'Olvidé']
+                    feed_keywords = ['Home, tab', 'Inicio, pesta', 'News Feed', 'noticias',
+                                     'Reels, tab', 'Notifications, tab', 'Profile, tab']
+                    
+                    tiene_feed = any(kw.lower() in xml_check.lower() for kw in feed_keywords)
+                    tiene_login = any(kw.lower() in xml_check.lower() for kw in login_keywords)
+                    
+                    if tiene_login and not tiene_feed:
+                        print(f"   ⚠️ Facebook en pantalla de login (UI) — sin sesión iniciada")
                         return []
                 except Exception:
                     pass
 
                 # 4. Menú
+                # v539: "Facebook menu" (lowercase), v541+: "Menú"/"Menu"
                 menu_xpaths = [
-                    '//*[contains(@content-desc, "Menu") or contains(@content-desc, "Menú")]',
+                    '//*[contains(@content-desc, "Menu") or contains(@content-desc, "Menú") or contains(@content-desc, "menu")]',
                     '//*[contains(@content-desc, "navigation") or contains(@content-desc, "navegación")]',
                 ]
                 for xp in menu_xpaths:
@@ -534,14 +569,115 @@ class FacebookAutomator:
                     return []
                 time.sleep(3)
 
-                # 5. Detectar tipo de UI
+                # 5. Panel de cuentas vía profile switcher (v539/v541/v549/v553)
+                #    Click en "Open profile switcher" → panel limpio sin basura del feed
                 xml_menu = self.device.dump_hierarchy()
                 if "profile switcher" in xml_menu.lower():
-                    # v541/v549: cuentas visibles directo en el menú
-                    cuentas = self._parse_cuentas_xml(xml_menu)
-                    if cuentas:
-                        return cuentas
-                    elif intento < 2:
+                    try:
+                        print(f"   🔍 Abriendo panel de cuentas vía profile switcher...")
+                        # Intentar múltiples selectores para el botón
+                        ps_clicked = False
+                        for ps_sel in [
+                            self.device(descriptionContains="Open profile switcher"),
+                            self.device(descriptionContains="profile switcher"),
+                            self.device.xpath('//*[contains(@content-desc, "profile switcher")]'),
+                        ]:
+                            if ps_sel.wait(timeout=3):
+                                ps_sel.click()
+                                ps_clicked = True
+                                break
+                        if not ps_clicked:
+                            print(f"   ❌ 'Open profile switcher' no encontrado")
+                            if intento < 2:
+                                continue
+                            return []
+                        time.sleep(3)
+
+                        # 1. Parsear cuentas desde la posición inicial (tope del panel)
+                        xml_inicial = self.device.dump_hierarchy()
+                        cuentas_iniciales = self._parse_cuentas_xml(xml_inicial)
+
+                        # 2. Buscar separador "your instagram profiles" para filtrar
+                        separator_y = None
+                        for kw in ['your instagram profiles', 'tus perfiles de instagram']:
+                            if kw in xml_inicial.lower():
+                                import re as _re, xml.etree.ElementTree as _ET
+                                root = _ET.fromstring(xml_inicial)
+                                for el in root.iter():
+                                    txt = (el.attrib.get('text', '') + ' ' +
+                                           el.attrib.get('content-desc', '')).lower()
+                                    if kw in txt:
+                                        bounds = el.attrib.get('bounds', '')
+                                        m = _re.search(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', bounds)
+                                        if m:
+                                            separator_y = int(m.group(2))
+                                        break
+                                break
+
+                        # Si el separador no estaba visible, scrollear hasta encontrarlo
+                        if not separator_y:
+                            for _ in range(6):
+                                self.device.swipe(500, 1100, 500, 600, steps=40)
+                                time.sleep(1.5)
+                                xml_ps = self.device.dump_hierarchy()
+                                for kw in ['your instagram profiles', 'tus perfiles de instagram']:
+                                    if kw in xml_ps.lower():
+                                        import re as _re, xml.etree.ElementTree as _ET
+                                        root = _ET.fromstring(xml_ps)
+                                        for el in root.iter():
+                                            txt = (el.attrib.get('text', '') + ' ' +
+                                                   el.attrib.get('content-desc', '')).lower()
+                                            if kw in txt:
+                                                bounds = el.attrib.get('bounds', '')
+                                                m = _re.search(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', bounds)
+                                                if m:
+                                                    separator_y = int(m.group(2))
+                                                break
+                                        break
+                                if separator_y:
+                                    break
+
+                        # 3. Filtrar cuentas por Y si hay separador (+50px buffer)
+                        if separator_y:
+                            cuentas = self._parse_cuentas_xml(xml_inicial, max_y=separator_y + 50)
+                        else:
+                            cuentas = cuentas_iniciales
+
+                        # Si no encontramos cuentas, intentar "View all"
+                        if not cuentas:
+                            ver_todo_xpaths = [
+                                '//*[contains(@text, "View all") or contains(@content-desc, "View all")]',
+                                '//*[contains(@text, "Ver todo") or contains(@content-desc, "Ver todo")]',
+                            ]
+                            for xp in ver_todo_xpaths:
+                                if self.device.xpath(xp).wait(timeout=3):
+                                    self.device.xpath(xp).click()
+                                    print(f"   📋 'View all' clickeado...")
+                                    time.sleep(2)
+                                    for _ in range(3):
+                                        self.device.swipe(500, 1500, 500, 400, steps=20)
+                                        time.sleep(1)
+                                    xml_ps = self.device.dump_hierarchy()
+                                    cuentas = self._parse_cuentas_xml(xml_ps)
+                                    break
+
+                        # Filtrar: remover "Open overflow menu", URLs, genéricos
+                        basura = {'more', 'photo', 'rate this translation', 'see more',
+                                  'see translation', 'notifications', 'upgrades',
+                                  'open overflow menu', 'cancel', 'close'}
+                        cuentas = [c for c in cuentas if c.lower() not in basura
+                                   and not c.startswith('http')
+                                   and '://' not in c]
+
+                        if cuentas:
+                            print(f"   ✅ {len(cuentas)} cuentas encontradas: {cuentas}")
+                            return cuentas
+                        print(f"   ⚠️ Panel abierto pero sin cuentas detectadas")
+
+                    except Exception as e:
+                        print(f"   ❌ Error en profile switcher: {e}")
+
+                    if intento < 2:
                         continue
                     return []
 
@@ -593,8 +729,14 @@ class FacebookAutomator:
                 print(f"   ❌ Error obteniendo cuentas: {e}")
 
         return []
-    def _parse_cuentas_xml(self, xml: str):
-        """Parsea el XML del panel de cuentas y devuelve la lista de nombres."""
+    def _parse_cuentas_xml(self, xml: str, max_y: int | None = None):
+        """Parsea el XML del panel de cuentas y devuelve la lista de nombres.
+        
+        Args:
+            xml: XML hierarchy dump
+            max_y: Si se proporciona, solo incluye elementos con Y < max_y
+                   (para filtrar perfiles de Facebook antes del separador Instagram)
+        """
         import xml.etree.ElementTree as ET
         root = ET.fromstring(xml)
 
@@ -611,6 +753,8 @@ class FacebookAutomator:
             'log out', 'cerrar sesión', 'logout', 'report', 'reportar', 'denunciar',
             'profile picture', 'profile switcher', 'dating',
             'see more', 'notifications', 'profile', 'ads center',
+            'upgrade', '#', 'create facebook', 'open overflow',
+            'accounts centre', 'go to accounts centre', 'view all',
         ]
 
         cuentas = []
@@ -622,7 +766,18 @@ class FacebookAutomator:
 
             if clickable == 'true' and label and label not in ('Cerrar', 'Close', 'Cancelar', 'Cancel'):
                 clean_label = label.split(',')[0].strip()
-                if not any(kw in clean_label.lower() for kw in skip_keywords):
+                # Filtrar: basura, URLs, posts largos (>60 chars = no es nombre de cuenta)
+                if (len(clean_label) >= 3 and len(clean_label) <= 60
+                        and not clean_label.startswith('http')
+                        and '://' not in clean_label
+                        and not any(kw in clean_label.lower() for kw in skip_keywords)):
+                    # Filtrar por posición Y (perfiles FB antes del separador Instagram)
+                    if max_y is not None:
+                        bounds = el.attrib.get('bounds', '')
+                        import re as _re2
+                        m = _re2.search(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', bounds)
+                        if m and int(m.group(2)) >= max_y:
+                            continue  # debajo del separador → ignorar
                     if clean_label not in cuentas:
                         cuentas.append(clean_label)
         return cuentas
