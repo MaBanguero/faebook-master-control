@@ -1278,3 +1278,215 @@ class FacebookAutomator:
         print(f"[FB][{self.device_id}] Calentamiento detenido")
         return cuenta_actual + 1
 
+    # ═══════════════════════════════════════════════════════════════
+    # RETENCIÓN DE REELS (watch time)
+    # ═══════════════════════════════════════════════════════════════
+
+    def proceso_retencion_reels(self, duracion_sesion_min: int = 8,
+                                 detener_flag=None) -> dict:
+        """
+        Mira reels para generar retención con comportamiento humano realista.
+
+        - 70% ve reel completo (15-60s)
+        - 30% skip rápido (2-6s)
+        - 5% like aleatorio
+        - 3% comparte
+        - Pausas entre reels (1-4s)
+        - Pausa larga cada 8-12 reels (20-90s)
+
+        Returns:
+            dict: {"reels_vistos": N, "tiempo_total_s": M, "likes": L, "shares": S}
+        """
+        reels_vistos = 0
+        likes = 0
+        shares = 0
+        tiempo_inicio = time.time()
+
+        # 1. Navegar a Reels — primero asegurar que estamos en feed principal
+        time.sleep(3)  # dar tiempo a que la UI cargue tras rotar cuenta
+        
+        reels_xpaths = [
+            '//*[contains(@content-desc, "Reels")]',
+            '//*[contains(@content-desc, "Reel,")]',
+            '//*[contains(@text, "Reels")]',
+        ]
+        encontrado = False
+        for xp in reels_xpaths:
+            if self.device.xpath(xp).wait(timeout=8):
+                self.device.xpath(xp).click()
+                encontrado = True
+                break
+        if not encontrado:
+            # Fallback: ir a feed e intentar de nuevo
+            self.device.press("back")
+            time.sleep(2)
+            for xp in reels_xpaths:
+                if self.device.xpath(xp).wait(timeout=5):
+                    self.device.xpath(xp).click()
+                    encontrado = True
+                    break
+        if not encontrado:
+            print(f"[FB][{self.device_id}] ❌ No se encontró pestaña Reels")
+            return {"reels_vistos": 0, "tiempo_total_s": 0, "likes": 0, "shares": 0}
+
+        time.sleep(3)
+        deadline = time.time() + (duracion_sesion_min * 60)
+
+        print(f"[FB][{self.device_id}] 📱 Retención Reels: {duracion_sesion_min}min")
+
+        while time.time() < deadline:
+            if detener_flag and detener_flag.is_set():
+                break
+
+            roll = random.randint(1, 100)
+
+            # 70%: ver reel completo
+            if roll <= 70:
+                watch = random.randint(15, 60)
+                time.sleep(watch)
+                reels_vistos += 1
+
+            # 30%: skip rápido
+            else:
+                watch = random.randint(2, 6)
+                time.sleep(watch)
+                reels_vistos += 1
+
+            # 5% like
+            if random.random() < 0.05:
+                try:
+                    like_xpath = '//*[contains(@content-desc, "reacciones") or contains(@content-desc, "reactions")]'
+                    if self.device.xpath(like_xpath).exists:
+                        self.device.xpath(like_xpath).click()
+                        likes += 1
+                        time.sleep(random.uniform(0.5, 1))
+                except Exception:
+                    pass
+
+            # 3% compartir
+            if random.random() < 0.03:
+                try:
+                    share_xpath = '//*[contains(@content-desc, "Compartir") or contains(@content-desc, "Share")]'
+                    if self.device.xpath(share_xpath).exists:
+                        self.device.xpath(share_xpath).click()
+                        time.sleep(2)
+                        ahora_xp = '//*[contains(@text, "Compartir ahora") or contains(@text, "Share now")]'
+                        if self.device.xpath(ahora_xp).exists:
+                            self.device.xpath(ahora_xp).click()
+                            shares += 1
+                        else:
+                            self.device.press("back")
+                        time.sleep(1)
+                except Exception:
+                    pass
+
+            # Swipe al siguiente reel
+            self.device.swipe(500, 1200, 500, 400, steps=20)
+            time.sleep(random.uniform(1, 4))
+
+            # Pausa larga cada 8-12 reels
+            if reels_vistos > 0 and reels_vistos % random.randint(8, 12) == 0:
+                pausa = random.randint(20, 90)
+                print(f"[FB][{self.device_id}] ⏸ Pausa {pausa}s (reel #{reels_vistos})")
+                # Esperar con chequeo de flag cada 5s
+                pausa_end = time.time() + pausa
+                while time.time() < pausa_end:
+                    if detener_flag and detener_flag.is_set():
+                        break
+                    time.sleep(min(5, pausa_end - time.time()))
+
+        tiempo_total = int(time.time() - tiempo_inicio)
+        print(f"[FB][{self.device_id}] ✅ Retención: {reels_vistos} reels, "
+              f"{tiempo_total}s, {likes} likes, {shares} shares")
+
+        return {
+            "reels_vistos": reels_vistos,
+            "tiempo_total_s": tiempo_total,
+            "likes": likes,
+            "shares": shares,
+        }
+
+    def proceso_retencion_multi_cuenta(self, duracion_sesion_cuenta_min: int = 5,
+                                        descanso_entre_cuentas_min: int = 20,
+                                        detener_flag=None) -> dict:
+        """
+        Rota entre cuentas, viendo reels en cada una. Loop infinito hasta detener_flag.
+
+        Args:
+            duracion_sesion_cuenta_min: Minutos viendo reels por cuenta
+            descanso_entre_cuentas_min: Minutos de descanso entre cuentas
+            detener_flag: threading.Event para detener
+
+        Returns:
+            dict: métricas totales acumuladas
+        """
+        total_reels = 0
+        total_tiempo = 0
+        total_likes = 0
+        total_shares = 0
+        cuentas_procesadas = 0
+
+        print(f"[FB][{self.device_id}] 🔁 Retención multi-cuenta: "
+              f"sesión={duracion_sesion_cuenta_min}min, descanso={descanso_entre_cuentas_min}min")
+
+        while True:
+            if detener_flag and detener_flag.is_set():
+                break
+
+            # Obtener cuentas frescas
+            cuentas = self.obtener_cuentas()
+            if not cuentas:
+                print(f"[FB][{self.device_id}] ⚠️ Sin cuentas, reintentando en 60s...")
+                time.sleep(60)
+                continue
+
+            for cuenta in cuentas:
+                if detener_flag and detener_flag.is_set():
+                    break
+
+                print(f"[FB][{self.device_id}] 👤 Cuenta: '{cuenta}'")
+
+                # Rotar a la cuenta
+                if not self.rotar_a_cuenta(cuenta, detener_flag):
+                    print(f"[FB][{self.device_id}] ⚠️ No se pudo rotar a '{cuenta}'")
+                    continue
+
+                # Ver reels
+                resultado = self.proceso_retencion_reels(
+                    duracion_sesion_cuenta_min, detener_flag
+                )
+                total_reels += resultado["reels_vistos"]
+                total_tiempo += resultado["tiempo_total_s"]
+                total_likes += resultado["likes"]
+                total_shares += resultado["shares"]
+                cuentas_procesadas += 1
+
+                # Cerrar FB
+                self.cerrar_facebook()
+                time.sleep(3)
+
+                # Descanso entre cuentas (variable)
+                if detener_flag and detener_flag.is_set():
+                    break
+                descanso = random.randint(
+                    descanso_entre_cuentas_min,
+                    descanso_entre_cuentas_min + 25
+                )
+                print(f"[FB][{self.device_id}] 😴 Descanso {descanso}min...")
+                descanso_end = time.time() + (descanso * 60)
+                while time.time() < descanso_end:
+                    if detener_flag and detener_flag.is_set():
+                        break
+                    time.sleep(min(30, descanso_end - time.time()))
+
+        print(f"[FB][{self.device_id}] Retención detenida: {cuentas_procesadas} cuentas, "
+              f"{total_reels} reels, {total_tiempo}s")
+
+        return {
+            "reels_vistos": total_reels,
+            "tiempo_total_s": total_tiempo,
+            "likes": total_likes,
+            "shares": total_shares,
+            "cuentas_procesadas": cuentas_procesadas,
+        }
+

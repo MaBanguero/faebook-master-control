@@ -212,3 +212,67 @@ async def ejecutar_calentamiento_facebook(request: dict):
         "tarea_id": tarea.id,
         "message": "Calentamiento Facebook iniciado",
     }
+
+
+@router.post("/facebook/retencion/ejecutar")
+async def ejecutar_retencion_reels(request: dict):
+    """
+    Ejecuta retención de Reels en múltiples dispositivos.
+
+    Body:
+    {
+        "dispositivos_ids": ["98883833..."],
+        "duracion_sesion_min": 8,
+        "descanso_entre_cuentas_min": 20
+    }
+    """
+    from api.services.retencion_reels_service import retencion_service
+
+    dispositivos_ids = request.get("dispositivos_ids", [])
+    duracion_sesion_min = request.get("duracion_sesion_min", 8)
+    descanso_entre_cuentas_min = request.get("descanso_entre_cuentas_min", 20)
+
+    if not dispositivos_ids:
+        raise HTTPException(status_code=400, detail="Faltan dispositivos_ids")
+
+    tarea = await tareas_service.crear_tarea(
+        tipo="fb_retencion_reels",
+        dispositivos_ids=dispositivos_ids,
+        config={
+            "duracion_sesion_min": duracion_sesion_min,
+            "descanso_entre_cuentas_min": descanso_entre_cuentas_min,
+        },
+        total_esperado=len(dispositivos_ids),
+    )
+
+    retencion_service.ejecutar(
+        dispositivos_ids=dispositivos_ids,
+        tarea_id=tarea.id,
+        duracion_sesion_min=duracion_sesion_min,
+        descanso_entre_cuentas_min=descanso_entre_cuentas_min,
+    )
+
+    return {
+        "success": True,
+        "tarea_id": tarea.id,
+        "message": f"Retención Reels iniciada ({len(dispositivos_ids)} dispositivos)",
+    }
+
+
+@router.post("/facebook/retencion/detener")
+async def detener_retencion_reels(request: dict = None):
+    """
+    Detiene todas las tareas de retención de Reels.
+    Body opcional: {"dispositivos_ids": [...]} para detener solo algunos.
+    """
+    from api.services.retencion_reels_service import retencion_service
+
+    req = request or {}
+    dispositivos_ids = req.get("dispositivos_ids")
+
+    detenidos = retencion_service.detener(dispositivos_ids)
+    return {
+        "success": True,
+        "detenidos": detenidos,
+        "message": f"{detenidos} dispositivos detenidos",
+    }

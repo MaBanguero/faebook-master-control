@@ -199,17 +199,11 @@ class TareasService:
 
     def incrementar_completados(self, tarea_id: str, incremento: int = 1):
         """
-        Incrementa la métrica de completados desde threads de background.
+        Incrementa la métrica de completados. Versión sync-safe (thread-safe).
         """
-        async def _update():
-            await self.actualizar_metrica(tarea_id, "exitosos", incremento)
-
-        if self._loop and self._loop.is_running():
-            asyncio.run_coroutine_threadsafe(_update(), self._loop)
-        else:
-            tarea = self._tareas.get(tarea_id)
-            if tarea:
-                tarea.actualizar_metrica("exitosos", incremento)
+        tarea = self._tareas.get(tarea_id)
+        if tarea:
+            tarea.actualizar_metrica("exitosos", incremento)
 
     def registrar_flag(self, tarea_id: str, dispositivo_id: str, flag: threading.Event):
         """Asocia el flag de detener de un dispositivo a su tarea."""
@@ -267,6 +261,7 @@ class TareasService:
     def marcar_dispositivo_finalizado(self, tarea_id: str, exito: bool = True):
         """
         Indica que un dispositivo terminó. Cuando todos terminan se finaliza la tarea automáticamente.
+        Versión sync-safe: actualiza tarea y dispositivos directamente sin depender del event loop.
         """
         finalizar = False
         with self._thread_lock:
@@ -284,14 +279,24 @@ class TareasService:
 
         if finalizar:
             exito_final = self._tarea_exitosa.pop(tarea_id, False)
+            # === FINALIZACIÓN SÍNCRONA (no depende del event loop) ===
+            self._finalizar_tarea_sync(tarea_id, exito_final)
 
-            async def _finalizar():
-                await self.finalizar_tarea(tarea_id, exito=exito_final)
-
-            if self._loop and self._loop.is_running():
-                asyncio.run_coroutine_threadsafe(_finalizar(), self._loop)
-            else:
-                asyncio.run(_finalizar())
+    def _finalizar_tarea_sync(self, tarea_id: str, exito: bool):
+        """Finaliza una tarea de forma síncrona (thread-safe)."""
+        tarea = self._tareas.get(tarea_id)
+        if tarea:
+            tarea.finalizar(exito)
+            print(f"✅ Tarea finalizada: {tarea_id[:8]}... (éxito: {exito})")
+            self._limpiar_tracking_tarea(tarea_id)
+            # Restaurar estado de dispositivos EN_TAREA
+            try:
+                for device_id in tarea.dispositivos_ids:
+                    dispositivo = self._dispositivo_service.obtener_dispositivo(device_id)
+                    if dispositivo and dispositivo.estado == DispositivoEstado.EN_TAREA:
+                        self._dispositivo_service.actualizar_estado(device_id, DispositivoEstado.INACTIVO)
+            except Exception as e:
+                print(f"⚠️ Error restaurando estado de dispositivos: {e}")
 
     def _limpiar_tracking_tarea(self, tarea_id: str):
         """Remueve referencias internas para evitar fugas de memoria."""
