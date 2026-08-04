@@ -227,8 +227,21 @@ class FacebookService:
             adb_id = dev.adb_id if dev else d_id
             automator = FacebookAutomator(adb_id)
 
-            # Obtener cuentas reales y filtrar
-            cuentas = automator.obtener_cuentas()
+            # Obtener cuentas reales y filtrar (con timeout para evitar cuelgues)
+            import concurrent.futures
+            cuentas = []
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(automator.obtener_cuentas)
+                    cuentas = future.result(timeout=90)  # 90s timeout
+            except concurrent.futures.TimeoutError:
+                print(f"⏰ [{d_id}] Timeout (90s) obteniendo cuentas — FB no responde")
+                self._finalizar_tarea(d_id, t_id, False)
+                return
+            except Exception as e:
+                print(f"❌ [{d_id}] Error obteniendo cuentas: {e}")
+                self._finalizar_tarea(d_id, t_id, False)
+                return
             disponibles = [c for c in cuentas if not tracker.is_interacted(adb_id, c, link, "like")]
 
             if not cuentas:
