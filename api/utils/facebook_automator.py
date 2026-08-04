@@ -25,10 +25,31 @@ class FacebookAutomator:
     # NAVEGACIÓN Y APERTURA
     # ═══════════════════════════════════════════════════════════════
 
+    def _esta_logueado(self) -> bool:
+        """Verifica si Facebook tiene sesión activa usando UI (no dumpsys)."""
+        try:
+            xml = self.device.dump_hierarchy()
+            login_keywords = ['Log in', 'Iniciar sesión', 'Create account', 'Crear cuenta',
+                              'Sign up', 'Registrarte', 'Forgot password', 'Olvidé']
+            feed_keywords = ['Home, tab', 'Inicio, pesta', 'News Feed', 'noticias',
+                             'Reels, tab', 'Notifications, tab', 'Profile, tab',
+                             'Menu', 'Menú', 'menu', 'profile switcher']
+            tiene_login = any(kw.lower() in xml.lower() for kw in login_keywords)
+            tiene_feed = any(kw.lower() in xml.lower() for kw in feed_keywords)
+            if tiene_login and not tiene_feed:
+                return False
+            return True
+        except Exception:
+            return True  # Si no podemos verificar, asumir OK para no bloquear
+
     def abrir_facebook_link(self, link: str):
-        """Abre un post/reel mediante deep link."""
+        """Abre un post/reel mediante deep link. Retorna False si está en login."""
         self.device.shell(f'am start -a android.intent.action.VIEW -d "{link}"')
         time.sleep(6)
+        if not self._esta_logueado():
+            print(f"   ⚠️ [{self.device_id}] Facebook en LoginActivity — no se puede interactuar")
+            return False
+        return True
 
     def cerrar_facebook(self):
         """Cierra forzosamente la app de Facebook."""
@@ -100,8 +121,14 @@ class FacebookAutomator:
                 # Paso 0: Reiniciar la app para estado limpio
                 self.device.app_stop("com.facebook.katana")
                 time.sleep(2)
+                self.device.screen_on()
                 self.device.app_start("com.facebook.katana")
                 time.sleep(8)
+
+                # 0.5: Verificar que NO estamos en pantalla de login
+                if not self._esta_logueado():
+                    print(f"   ⚠️ [{self.device_id}] Facebook en LoginActivity — no se puede rotar")
+                    return False
 
                 # --- Paso 1: Abrir menú hamburguesa ---
                 if detener_flag and detener_flag.is_set():
@@ -274,7 +301,9 @@ class FacebookAutomator:
           - ❌ "Me gusta"/"Like" exactos ya no existen en la UI
         """
         try:
-            self.abrir_facebook_link(link)
+            if not self.abrir_facebook_link(link):
+                print(f"   ❌ No se pudo abrir el link (login o error)")
+                return False
             time.sleep(random.randint(3, 5))
 
             # Selectores ordenados por prioridad (primero el validado)
@@ -322,7 +351,9 @@ class FacebookAutomator:
           4. Click en "Enviar" o presionar Enter
         """
         try:
-            self.abrir_facebook_link(link)
+            if not self.abrir_facebook_link(link):
+                print(f"   ❌ No se pudo abrir el link para comentar (login o error)")
+                return False
             time.sleep(3)
 
             # --- Abrir sección de comentarios ---
@@ -423,7 +454,9 @@ class FacebookAutomator:
           4. Si no hay "Compartir ahora", usar "Escribir publicación" → "PUBLICAR"
         """
         try:
-            self.abrir_facebook_link(link)
+            if not self.abrir_facebook_link(link):
+                print(f"   ❌ No se pudo abrir el link para compartir (login o error)")
+                return False
             print("   ⏳ Cargando link...")
             time.sleep(random.randint(7, 10))
 
