@@ -416,6 +416,11 @@
                 <label class="text-xs text-slate-400 block mb-1">Cuentas a usar</label>
                 <input type="number" class="input" id="${prefix}-cuentas" value="0" min="0" style="width:100px">
                 <p class="text-xs text-slate-500 mt-1">0 = secuencial, N = aleatorias</p>
+              </div>
+              <div class="pt-3 border-t border-slate-700">
+                <label class="text-xs text-slate-400 block mb-1">🎬 Retención Reels (minutos por cuenta)</label>
+                <input type="number" class="input" id="${prefix}-retencion" value="0" min="0" max="10" style="width:100px">
+                <p class="text-xs text-slate-500 mt-1">0 = sin retención. 1-3 min recomendado para flujo natural.</p>
               </div>` : ''}
 
               <button class="btn-primary w-full py-3 font-semibold" id="${prefix}-run-btn" onclick="runFlow('${name}')">
@@ -487,7 +492,8 @@
         let endpoint, body;
         if (platform === 'facebook') {
           const cuentas = parseInt(document.getElementById('fb-cuentas')?.value || '0');
-          body = { dispositivos_ids: deviceIds, link_post: link, comentario: comments.length > 0 ? comments : '', cuentas_a_usar: cuentas };
+          const retencion = parseInt(document.getElementById('fb-retencion')?.value || '0');
+          body = { dispositivos_ids: deviceIds, link_post: link, comentario: comments.length > 0 ? comments : '', cuentas_a_usar: cuentas, duracion_retencion_min: retencion };
           endpoint = '/api/facebook/flujo-multi-cuenta/ejecutar';
         } else {
           body = { dispositivos_ids: deviceIds, link_post: link, comentario: comments.length > 0 ? comments : '' };

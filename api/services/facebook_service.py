@@ -178,7 +178,8 @@ class FacebookService:
             ).start()
 
     def ejecutar_flujo_multi_cuenta(self, dispositivos_ids: List[str], link: str,
-                                     comentario, tarea_id: str, cuentas_a_usar: int = 0):
+                                     comentario, tarea_id: str, cuentas_a_usar: int = 0,
+                                     duracion_retencion_min: int = 0):
         """
         Ejecuta el flujo completo en múltiples cuentas por dispositivo.
 
@@ -215,11 +216,12 @@ class FacebookService:
             self.fb_detener_flags[d_id] = flag
             threading.Thread(
                 target=self._worker_flujo_multi_cuenta,
-                args=(d_id, link, comentarios_dispositivo, flag, tarea_id),
+                args=(d_id, link, comentarios_dispositivo, flag, tarea_id, duracion_retencion_min),
                 daemon=True
             ).start()
 
-    def _worker_flujo_multi_cuenta(self, d_id, link, comentarios, flag, t_id):
+    def _worker_flujo_multi_cuenta(self, d_id, link, comentarios, flag, t_id,
+                                      duracion_retencion_min: int = 0):
         """Worker: 1 cuenta = 1 flujo (like+comentario+compartir). Tracking por nombre."""
         try:
             dispositivo_service.actualizar_estado(d_id, DispositivoEstado.TRABAJANDO)
@@ -270,7 +272,8 @@ class FacebookService:
 
                 print(f"\n🔁 [{d_id}] {i+1}/{n}: '{cuenta}'" + (f" 💬" if texto else ""))
                 if automator.rotar_a_cuenta(cuenta, flag):
-                    exito, _ = automator.ejecutar_flujo_completo_fb(link, texto, flag)
+                    exito, _ = automator.ejecutar_flujo_completo_fb(
+                        link, texto, flag, duracion_retencion_min=duracion_retencion_min)
                     if exito:
                         tracker.record(adb_id, cuenta, link, "like")
                         tracker.record(adb_id, cuenta, link, "share")

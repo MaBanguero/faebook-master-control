@@ -816,10 +816,11 @@ class FacebookAutomator:
         return cuentas
 
     def ejecutar_flujo_completo_fb(self, link: str, texto_comentario: str, detener_flag=None,
-                                    indice_inicial: int = 0):
+                                    indice_inicial: int = 0, duracion_retencion_min: int = 0):
         """
-        Ejecuta Like → Comentario → Compartir, todo en la MISMA cuenta.
+        Ejecuta Like → Comentario → Compartir → Retención Reels, todo en la MISMA cuenta.
         Si indice_inicial > 0, rota a esa cuenta antes de empezar.
+        Si duracion_retencion_min > 0, agrega retención de reels al final.
 
         El servicio externo (FacebookService) lleva el contador y lo incrementa
         en 1 tras cada ejecución para que la próxima use la siguiente cuenta.
@@ -835,9 +836,12 @@ class FacebookAutomator:
         if not self.rotar_perfil_secuencial(indice_inicial, detener_flag):
             print(f"   ⚠️ No se pudo rotar, continuando en cuenta actual")
 
+        exito = True
+
         # 1. LIKE
         print("\n--- PASO 1: LIKE ---")
-        self.proceso_like_facebook(link, detener_flag)
+        if not self.proceso_like_facebook(link, detener_flag):
+            exito = False
         time.sleep(3)
         self.cerrar_facebook()
         if detener_flag and detener_flag.is_set():
@@ -854,13 +858,27 @@ class FacebookAutomator:
 
         # 3. COMPARTIR
         print("\n--- PASO 3: COMPARTIR ---")
-        self.proceso_compartir_post(link, detener_flag)
+        if not self.proceso_compartir_post(link, detener_flag):
+            exito = False
         time.sleep(3)
         self.cerrar_facebook()
 
+        # 4. RETENCIÓN REELS (solo si duracion_retencion_min > 0)
+        if duracion_retencion_min > 0 and not (detener_flag and detener_flag.is_set()):
+            print(f"\n--- PASO 4: RETENCIÓN REELS ({duracion_retencion_min}min) ---")
+            resultado = self.proceso_retencion_reels(
+                duracion_sesion_min=duracion_retencion_min,
+                detener_flag=detener_flag
+            )
+            print(f"   📊 Reels vistos: {resultado.get('reels_vistos', 0)}, "
+                  f"likes: {resultado.get('likes', 0)}, shares: {resultado.get('shares', 0)}")
+            self.cerrar_facebook()
+        else:
+            print("\n--- PASO 4: RETENCIÓN REELS (omitido) ---")
+
         siguiente = indice_inicial + 1
         print(f"\n✅ [{self.device_id}] Flujo completo finalizado. Próxima cuenta: {siguiente}")
-        return True, siguiente
+        return exito, siguiente
 
 
     # ═══════════════════════════════════════════════════════════════

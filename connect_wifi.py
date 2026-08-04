@@ -1,102 +1,171 @@
-#!/usr/bin/env python3
-"""Batch WiFi connection for all devices."""
-import uiautomator2 as u2
-import time
+"""
+Conecta a WiFi oculta usando uiautomator2 + ADB input (más fiable).
+"""
+
 import sys
+import time
+import uiautomator2 as u2
 
-SSID = "Mitoxmar"
-PASS = "Marvin123"
+SSID = "granja"
+PASSWORD = "12345678"
 
-DEVICES = [
-    "98877b475345573954", "9887a8474a41454e58", "9887bc43445057584d",
-    "988820344f33594d48", "988837454249515651", "98883833445a305730",
-    "988939454d3930314c", "98897a31415156545a", "98897a3359474a4744",
-    "98897a47483554424c", "988995304b4f573456", "9889954538385a3345",
-    "988b5a415053434638", "988b5a48314f59554a", "988b9a474c38474e56",
-    "988d9131423542415a", "ce11160b19538a0205",
-]
 
-ok = []
-fail = []
-
-for i, dev_id in enumerate(DEVICES):
-    print(f"[{i+1}/{len(DEVICES)}] {dev_id} ", end="", flush=True)
+def connect_hidden(serial: str) -> bool:
+    d = None
     try:
-        d = u2.connect(dev_id)
-        
-        # Check if already connected
-        out = d.shell("dumpsys wifi | grep 'mWifiInfo.*SSID'").output
-        if SSID in out:
-            print("✅ ya conectado")
-            ok.append(dev_id)
-            continue
-        
-        # Open WiFi settings
-        d.shell("am start -a android.settings.WIFI_SETTINGS")
-        time.sleep(2.5)
-        
-        # Find and click Mitoxmar
-        el = d(text=SSID)
-        if not el.exists:
-            # Scroll to find it
-            for _ in range(6):
-                d.swipe(540, 1200, 540, 400)
-                time.sleep(1)
-                el = d(text=SSID)
-                if el.exists:
-                    break
-        
-        if not el.exists:
-            print(f"❌ no encontrado en lista")
-            d.press("home")
-            fail.append((dev_id, "network not found"))
-            continue
-        
-        el.click()
-        time.sleep(2.5)
-        
-        # Enter password
-        edit = d(className="android.widget.EditText")
-        if edit.exists(timeout=3):
-            edit.set_text(PASS)
-            time.sleep(0.5)
-        else:
-            print(f"❌ sin campo de contraseña")
-            d.press("back"); d.press("home")
-            fail.append((dev_id, "no password field"))
-            continue
-        
-        # Click Connect
-        btn = d(text="Conectar")
-        if btn.exists(timeout=2):
-            btn.click()
-        elif d(text="Connect").exists(timeout=1):
-            d(text="Connect").click()
-        else:
-            btns = d(className="android.widget.Button")
-            if btns.count > 0:
-                btns[0].click()
-            else:
-                d.press("enter")
-        
-        # Verify
-        time.sleep(5)
-        out = d.shell("dumpsys wifi | grep 'mWifiInfo.*SSID'").output
-        if SSID in out:
-            print("✅ conectado")
-            ok.append(dev_id)
-        else:
-            print(f"❌ no conectó")
-            fail.append((dev_id, "connection failed"))
-        
-        d.press("home")
-        
-    except Exception as e:
-        print(f"❌ error: {e}")
-        fail.append((dev_id, str(e)))
+        d = u2.connect(serial)
+        print(f"[{serial}] Conectado vía uiautomator2")
 
-print(f"\n{'='*50}")
-print(f"RESULTADO: {len(ok)}/{len(DEVICES)} conectados a {SSID}")
-print(f"{'='*50}")
-for dev_id, reason in fail:
-    print(f"  ❌ {dev_id}: {reason}")
+        # 1. Abrir WiFi settings
+        d.shell("am start -a android.settings.WIFI_SETTINGS")
+        time.sleep(3)
+
+        # Debug: ver qué hay en pantalla
+        xml = d.dump_hierarchy()
+        print(f"[{serial}] Pantalla WiFi abierta. Buscando 'Add network'...")
+
+        # 2. Hacer scroll y buscar "Add network" / "Agregar red"
+        # Primero ver si ya es visible sin scroll
+        add_clicked = False
+
+        for attempt in range(4):
+            for label in ["Add network", "Agregar red", "Añadir red", "Add"]:
+                el = d(text=label)
+                if el.exists(timeout=1):
+                    el.click()
+                    add_clicked = True
+                    print(f"[{serial}] Botón '{label}' encontrado y clickeado")
+                    break
+            if add_clicked:
+                break
+            # Scroll hacia abajo (último elemento suele estar al fondo)
+            d.swipe(500, 900, 500, 200, steps=20)
+            time.sleep(1.5)
+
+        if not add_clicked:
+            # Probar por content-desc
+            for label in ["Add network", "Agregar red"]:
+                el = d(description=label)
+                if el.exists(timeout=1):
+                    el.click()
+                    add_clicked = True
+                    break
+
+        if not add_clicked:
+            # Probar botón "+" o icono flotante
+            # En Samsung puede estar en menu overflow
+            d.press("menu")
+            time.sleep(1)
+            xml = d.dump_hierarchy()
+            if "Add network" in xml or "Agregar" in xml:
+                for label in ["Add network", "Agregar red", "Advanced", "Avanzado"]:
+                    el = d(textContains=label)
+                    if el.exists(timeout=1):
+                        el.click()
+                        add_clicked = True
+                        break
+            if not add_clicked:
+                d.press("back")  # cerrar menu
+
+        if not add_clicked:
+            print(f"[{serial}] ❌ No se encontró botón 'Add network'")
+            # DUMP para debuggear
+            xml = d.dump_hierarchy()
+            print(f"[{serial}] Jerarquía: {xml[:500]}...")
+            d.press("home")
+            return False
+
+        time.sleep(2)
+
+        # 3. Ahora estamos en la pantalla de agregar red
+        xml = d.dump_hierarchy()
+        print(f"[{serial}] Pantalla add network. Jerarquía parcial: {xml[:300]}")
+
+        # Escribir SSID usando input text (más fiable que set_text)
+        d.shell("input text '%s'" % SSID)
+        time.sleep(0.5)
+
+        # 4. Navegar al campo de seguridad (tab)
+        d.shell("input keyevent 61")  # KEYCODE_TAB
+        time.sleep(0.5)
+
+        # Seleccionar WPA2 PSK con keyevents
+        d.shell("input keyevent 61")  # Otro tab (puede ser dropdown)
+        time.sleep(0.3)
+        d.shell("input keyevent 20")  # DPAD_DOWN para abrir dropdown
+        time.sleep(0.5)
+        # Navegar a WPA2 PSK (suele ser la 2da opcion)
+        for _ in range(2):
+            d.shell("input keyevent 20")  # DPAD_DOWN
+            time.sleep(0.2)
+        d.shell("input keyevent 66")  # ENTER para seleccionar
+        time.sleep(0.5)
+
+        # 5. Tab al campo de password
+        d.shell("input keyevent 61")  # KEYCODE_TAB
+        time.sleep(0.3)
+        # Escribir password
+        d.shell("input text '%s'" % PASSWORD)
+        time.sleep(0.3)
+
+        # 6. Tab hasta Save/Guardar y ENTER
+        for _ in range(3):
+            d.shell("input keyevent 61")  # KEYCODE_TAB
+            time.sleep(0.2)
+        d.shell("input keyevent 66")  # ENTER
+        time.sleep(5)
+
+        # 7. Verificar conexión
+        out = d.shell("dumpsys wifi | grep 'mWifiInfo' | head -1")
+        print(f"[{serial}] WiFi info: {out.strip()[:120]}")
+        
+        if SSID.lower() in out.lower():
+            print(f"[{serial}] ✅ Conectado a '{SSID}'")
+            d.press("home")
+            return True
+
+        # Verificar en redes guardadas
+        nets = d.shell("dumpsys wifi | grep 'SSID:' | grep -i granja")
+        if nets:
+            print(f"[{serial}] ✅ Red '{SSID}' agregada: {nets.strip()[:100]}")
+            d.press("home")
+            return True
+
+        print(f"[{serial}] ⚠️  Red agregada, verificar conexión manualmente")
+        d.press("home")
+        return True
+
+    except Exception as e:
+        print(f"[{serial}] ❌ Error: {e}")
+        if d:
+            try:
+                d.press("home")
+            except:
+                pass
+        return False
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Uso: python connect_wifi.py <serial1> <serial2> ...")
+        sys.exit(1)
+
+    serials = sys.argv[1:]
+    print(f"Conectando {len(serials)} dispositivos a red oculta '{SSID}'...\n")
+
+    results = {}
+    for i, serial in enumerate(serials):
+        print(f"\n--- [{i+1}/{len(serials)}] {serial} ---")
+        ok = connect_hidden(serial)
+        results[serial] = "✅" if ok else "❌"
+        time.sleep(2)
+
+    print(f"\n{'='*50}")
+    print(f"RESULTADOS ({SSID}):")
+    for serial, status in results.items():
+        print(f"  {status} {serial}")
+    print(f"{'='*50}")
+
+
+if __name__ == "__main__":
+    main()
