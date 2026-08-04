@@ -321,7 +321,7 @@
             <div class="space-y-3">
               ${active.map(t => {
                 const pct = t.metricas.total_esperado > 0 ? ((t.metricas.exitosos + t.metricas.fallidos) / t.metricas.total_esperado * 100).toFixed(0) : 0;
-                const typeLabels = { fb_flujo_multi_cuenta: 'FB Multi', tt_flujo_multi_cuenta: 'TT Multi', ig_flujo_multi_cuenta: 'IG Multi', fb_calentamiento: 'FB Warm', tt_calentamiento: 'TT Warm', ig_calentamiento: 'IG Warm', fb_likes: 'FB Likes', fb_comentarios: 'FB Com.', fb_compartir: 'FB Share', fb_flujo_completo: 'FB Full' };
+                const typeLabels = { fb_flujo_multi_cuenta: 'FB Multi', tt_flujo_multi_cuenta: 'TT Multi', ig_flujo_multi_cuenta: 'IG Multi', fb_calentamiento: 'FB Warm', tt_calentamiento: 'TT Warm', ig_calentamiento: 'IG Warm', fb_likes: 'FB Likes', fb_comentarios: 'FB Com.', fb_compartir: 'FB Share', fb_flujo_completo: 'FB Full', fb_retencion_reels: 'FB Retención' };
                 return `<div class="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg">
                   <div class="flex-1">
                     <div class="flex items-center gap-2 mb-1">
@@ -361,6 +361,7 @@
             <button class="btn-primary text-sm" onclick="runAction('${name}','comentarios')">💬 Solo Comentarios</button>
             <button class="btn-primary text-sm" onclick="runAction('${name}','compartir')">📤 Solo Compartir</button>
             <button class="btn-ghost text-sm" onclick="runAction('${name}','cambiar_cuentas')">🔄 Rotar Cuentas</button>
+            <button class="btn-ghost text-sm !border !border-purple-700 !text-purple-300 hover:!bg-purple-900/30" onclick="runRetencion('${name}')">🎬 Retención Reels</button>
           </div>
         </div>
       ` : '';
@@ -537,6 +538,29 @@
           method: 'POST', body: JSON.stringify({ dispositivos_ids: deviceIds })
         });
         toast(`🔥 Calentamiento iniciado en ${deviceIds.length} dispositivo(s)`, 'success');
+      } catch (e) {
+        toast(`❌ ${e.message}`, 'error');
+      }
+    }
+
+    async function runRetencion(platform) {
+      if (platform !== 'facebook') return;
+      const deviceIds = getSelectedDevices('fb');
+      if (deviceIds.length === 0) return toast('Selecciona al menos un dispositivo', 'error');
+
+      const duracion = parseInt(prompt('⏱ Duración por sesión (minutos):', '8')) || 8;
+      const descanso = parseInt(prompt('😴 Descanso entre cuentas (minutos):', '20')) || 20;
+
+      try {
+        const res = await api('/api/facebook/retencion/ejecutar', {
+          method: 'POST',
+          body: JSON.stringify({
+            dispositivos_ids: deviceIds,
+            duracion_sesion_min: duracion,
+            descanso_entre_cuentas_min: descanso
+          })
+        });
+        toast(`🎬 Retención Reels iniciada en ${deviceIds.length} dispositivo(s)`, 'success');
       } catch (e) {
         toast(`❌ ${e.message}`, 'error');
       }
