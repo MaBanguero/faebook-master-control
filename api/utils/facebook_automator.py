@@ -45,7 +45,7 @@ class FacebookAutomator:
     def abrir_facebook_link(self, link: str):
         """Abre un post/reel mediante deep link. Retorna False si está en login."""
         self.device.shell(f'am start -a android.intent.action.VIEW -d "{link}"')
-        time.sleep(6)
+        time.sleep(random.randint(5, 10))
         if not self._esta_logueado():
             print(f"   ⚠️ [{self.device_id}] Facebook en LoginActivity — no se puede interactuar")
             return False
@@ -54,7 +54,7 @@ class FacebookAutomator:
     def cerrar_facebook(self):
         """Cierra forzosamente la app de Facebook."""
         self.device.app_stop("com.facebook.katana")
-        time.sleep(2)
+        time.sleep(random.randint(1, 3))
 
     def _ir_a_feed(self):
         """
@@ -327,7 +327,7 @@ class FacebookAutomator:
 
                 print("   ↕️ Scroll para buscar botón Like...")
                 self.device.swipe(0.5, 0.7, 0.5, 0.4, duration=0.6)
-                time.sleep(2)
+                time.sleep(random.randint(2, 4))
 
             print(f"   ❌ Like no ejecutado tras 5 intentos")
             return False
@@ -354,7 +354,7 @@ class FacebookAutomator:
             if not self.abrir_facebook_link(link):
                 print(f"   ❌ No se pudo abrir el link para comentar (login o error)")
                 return False
-            time.sleep(3)
+            time.sleep(random.randint(2, 5))
 
             # --- Abrir sección de comentarios ---
             selectores_abrir = [
@@ -382,13 +382,13 @@ class FacebookAutomator:
 
                 print("   ↕️ Scroll para buscar botón...")
                 self.device.swipe(0.5, 0.7, 0.5, 0.3, duration=0.5)
-                time.sleep(2)
+                time.sleep(random.randint(1, 3))
 
             if not seccion_abierta:
                 print(f"   ❌ No se pudo abrir sección de comentarios")
                 return False
 
-            time.sleep(3)
+            time.sleep(random.randint(2, 4))
 
             # --- Escribir comentario ---
             # El EditText tiene content-desc tipo "Comentar como <nombre>"
@@ -488,7 +488,7 @@ class FacebookAutomator:
                 print(f"   🔍 Buscando botón Compartir (Intento {intento + 1})...")
 
                 if self.device.xpath(btn_compartir).exists:
-                    time.sleep(1)
+                    time.sleep(random.randint(1, 3))
                     self.device.xpath(btn_compartir).click()
                     compartir_encontrado = True
                     print(f"   ✅ Botón Compartir clickeado")
@@ -496,13 +496,13 @@ class FacebookAutomator:
 
                 print("   ↕️ Scroll...")
                 self.device.swipe(0.5, 0.5, 0.5, 0.2, duration=0.6)
-                time.sleep(3)
+                time.sleep(random.randint(2, 4))
 
             if not compartir_encontrado:
                 print(f"   ❌ Botón Compartir no encontrado")
                 return False
 
-            time.sleep(4)
+            time.sleep(random.randint(3, 6))
             if detener_flag and detener_flag.is_set():
                 return False
 
@@ -515,7 +515,7 @@ class FacebookAutomator:
             # Opción 2: Escribir publicación → PUBLICAR
             if self.device.xpath(btn_escribir_post).exists:
                 self.device.xpath(btn_escribir_post).click()
-                time.sleep(5)
+                time.sleep(random.randint(4, 7))
 
                 if self.device.xpath(btn_publicar_final).exists:
                     self.device.xpath(btn_publicar_final).click()
@@ -842,7 +842,7 @@ class FacebookAutomator:
         print("\n--- PASO 1: LIKE ---")
         if not self.proceso_like_facebook(link, detener_flag):
             exito = False
-        time.sleep(3)
+        time.sleep(random.randint(2, 5))
         self.cerrar_facebook()
         if detener_flag and detener_flag.is_set():
             return False, indice_inicial + 1
@@ -851,7 +851,7 @@ class FacebookAutomator:
         if texto_comentario and texto_comentario.strip():
             print("\n--- PASO 2: COMENTARIO ---")
             self.proceso_comentario_reels(link, texto_comentario, detener_flag)
-            time.sleep(3)
+            time.sleep(random.randint(2, 5))
             self.cerrar_facebook()
         else:
             print("\n--- PASO 2: COMENTARIO (omitido - sin texto) ---")
@@ -860,7 +860,7 @@ class FacebookAutomator:
         print("\n--- PASO 3: COMPARTIR ---")
         if not self.proceso_compartir_post(link, detener_flag):
             exito = False
-        time.sleep(3)
+        time.sleep(random.randint(2, 5))
         self.cerrar_facebook()
 
         # 4. RETENCIÓN REELS (solo si duracion_retencion_min > 0)
